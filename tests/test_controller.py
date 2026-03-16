@@ -10,6 +10,7 @@ from dual_agents.controller import (
     WorkflowController,
     WorkflowViolation,
     should_enter_forum_adjudication,
+    requires_premium_review,
     validate_forum_ruling,
     contains_internal_leak,
     build_remediation_issue_cluster,
@@ -266,6 +267,46 @@ def test_forum_adjudication_trigger_requires_real_conflict_signal() -> None:
             forum_enabled=True,
         )
         is False
+    )
+
+
+def test_requires_premium_review_returns_true_when_optimization_disabled() -> None:
+    assert (
+        requires_premium_review(
+            premium_optimize_enabled=False,
+            repeated_review_cycles=0,
+        )
+        is True
+    )
+
+
+def test_requires_premium_review_keeps_low_risk_ordinary_units_off_premium() -> None:
+    assert (
+        requires_premium_review(
+            premium_optimize_enabled=True,
+            repeated_review_cycles=0,
+            conflicting_evidence=False,
+            delivery_sensitive=False,
+            high_risk_actions=(),
+        )
+        is False
+    )
+
+
+def test_requires_premium_review_escalates_high_risk_and_repeated_loops() -> None:
+    assert (
+        requires_premium_review(
+            premium_optimize_enabled=True,
+            high_risk_actions=(HighRiskAction.PRODUCTION_PUBLISH,),
+        )
+        is True
+    )
+    assert (
+        requires_premium_review(
+            premium_optimize_enabled=True,
+            repeated_review_cycles=2,
+        )
+        is True
     )
 
 
