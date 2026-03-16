@@ -26,6 +26,9 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "--mode post-review" in agents["dual-coordinator.md"]
     assert "forum_adjudication" in agents["dual-coordinator.md"].lower()
     assert "--mode forum" in agents["dual-coordinator.md"]
+    assert "subagent_type" in agents["dual-coordinator.md"]
+    assert "schema is known" in agents["dual-coordinator.md"].lower()
+    assert "return `stalled`" in agents["glm-builder.md"].lower()
 
 
 def test_build_opencode_config_targets_zai_provider() -> None:

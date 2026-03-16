@@ -15,6 +15,8 @@ def test_review_prompt_mentions_review_only_default() -> None:
     assert "one bounded remediation cluster" in prompt.lower()
     assert "forum_adjudication" in prompt.lower()
     assert "moderator ruling" in prompt.lower()
+    assert "missing launcher arguments" in prompt.lower()
+    assert "unknown runtime schema" in prompt.lower()
 
 
 def test_review_command_starts_with_codex_exec() -> None:

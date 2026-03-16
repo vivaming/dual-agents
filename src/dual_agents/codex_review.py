@@ -47,6 +47,8 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         {forum_rules.rstrip()}
         Prefer 3-5 evidence files, concise facts, and explicit questions over long narrative context.
         If a review times out, narrow the packet instead of retrying the same broad request.
+        If the coordinator reports a failed task/subagent call caused by missing launcher arguments or unknown runtime schema, treat that as a workflow defect.
+        In that case, require the next action to avoid speculative subagent launches and either use a known-good handoff path or mark the unit `STALLED`.
         Check remote-delivery proof using evidence equivalent to:
         {verification_steps}
         Return only:
