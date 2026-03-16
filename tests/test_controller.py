@@ -9,6 +9,8 @@ from dual_agents.controller import (
     TaskType,
     WorkflowController,
     WorkflowViolation,
+    should_enter_forum_adjudication,
+    validate_forum_ruling,
     contains_internal_leak,
     build_remediation_issue_cluster,
     is_bounded_builder_task,
@@ -243,4 +245,55 @@ def test_validate_post_review_adjudication_rejects_too_many_issues() -> None:
             "- issue 3\n"
             "- issue 4\n"
             "Next remediation unit: fix one thing"
+        )
+
+
+def test_forum_adjudication_trigger_requires_real_conflict_signal() -> None:
+    assert (
+        should_enter_forum_adjudication(
+            repeated_review_cycles=2,
+            conflicting_evidence=False,
+            blocker_ambiguity=False,
+            forum_enabled=True,
+        )
+        is True
+    )
+    assert (
+        should_enter_forum_adjudication(
+            repeated_review_cycles=0,
+            conflicting_evidence=False,
+            blocker_ambiguity=False,
+            forum_enabled=True,
+        )
+        is False
+    )
+
+
+def test_validate_forum_ruling_accepts_bounded_contract() -> None:
+    ruling = validate_forum_ruling(
+        """
+Current dispute: The feed and page disagree on speed.
+Perspectives:
+- Feed value is structured.
+- Page text may be stale.
+Moderator ruling: Hold promotion until variant ownership is checked.
+Next bounded action: Add variant-safety checks for max_speed_mph.
+"""
+    )
+    assert "Moderator ruling:" in ruling
+
+
+def test_validate_forum_ruling_rejects_excessive_perspectives() -> None:
+    with pytest.raises(WorkflowViolation):
+        validate_forum_ruling(
+            """
+Current dispute: The feed and page disagree on speed.
+Perspectives:
+- one
+- two
+- three
+- four
+Moderator ruling: Hold promotion until variant ownership is checked.
+Next bounded action: Add variant-safety checks for max_speed_mph.
+"""
         )

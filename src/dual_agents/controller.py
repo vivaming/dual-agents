@@ -271,6 +271,42 @@ def validate_post_review_adjudication(raw_output: str, *, max_issue_count: int =
     return cleaned
 
 
+def should_enter_forum_adjudication(
+    *,
+    repeated_review_cycles: int,
+    conflicting_evidence: bool,
+    blocker_ambiguity: bool,
+    forum_enabled: bool,
+) -> bool:
+    if not forum_enabled:
+        return False
+    return repeated_review_cycles >= 2 or conflicting_evidence or blocker_ambiguity
+
+
+def validate_forum_ruling(raw_output: str, *, max_perspectives: int = 3) -> str:
+    cleaned = validate_user_facing_report(raw_output)
+    required_labels = (
+        "Current dispute:",
+        "Perspectives:",
+        "Moderator ruling:",
+        "Next bounded action:",
+    )
+    missing_labels = [label for label in required_labels if label not in cleaned]
+    if missing_labels:
+        raise WorkflowViolation("Forum ruling missing required labels: " + ", ".join(missing_labels))
+    perspective_lines = [
+        line for line in cleaned.splitlines()
+        if line.strip().startswith("- ") and "Perspectives:" not in line
+    ]
+    if len(perspective_lines) > max_perspectives:
+        raise WorkflowViolation(
+            f"Forum ruling listed {len(perspective_lines)} perspectives; limit is {max_perspectives}."
+        )
+    if len(cleaned) > 1600:
+        raise WorkflowViolation("Forum ruling is too long; keep it concise and bounded.")
+    return cleaned
+
+
 def requires_critical_review(
     *,
     decision_category: DecisionCategory,
@@ -310,6 +346,7 @@ class WorkflowController:
     builder_handoff_active: bool = field(default=False, init=False)
     current_builder_task: str | None = field(default=None, init=False)
     current_builder_task_type: TaskType | None = field(default=None, init=False)
+    forum_rounds_used: int = field(default=0, init=False)
 
     def flag_decision_for_review(
         self,
@@ -346,6 +383,8 @@ class WorkflowController:
             self.stage = (
                 WorkflowStage.DELIVERY_VERIFICATION if self.delivery_sensitive else WorkflowStage.DEPLOY_READY
             )
+        elif self.stage == WorkflowStage.FORUM_ADJUDICATION:
+            self.stage = WorkflowStage.IMPLEMENTATION
         elif self.stage == WorkflowStage.DELIVERY_VERIFICATION:
             raise WorkflowViolation("Delivery verification requires explicit proof; use verify_delivery().")
         elif self.stage == WorkflowStage.DEPLOY_READY:
@@ -432,4 +471,13 @@ class WorkflowController:
         if not artifact_proven:
             raise WorkflowViolation("Remote artifact proof is required before completion.")
         self.stage = WorkflowStage.DEPLOY_READY
+        return self.stage
+
+    def enter_forum_adjudication(self, *, forum_max_rounds: int) -> WorkflowStage:
+        if self.stage not in {WorkflowStage.ADJUDICATION, WorkflowStage.IMPLEMENTATION}:
+            raise WorkflowViolation("Forum adjudication may only start from ADJUDICATION or IMPLEMENTATION.")
+        if self.forum_rounds_used >= forum_max_rounds:
+            raise WorkflowViolation("Forum adjudication round limit exceeded.")
+        self.forum_rounds_used += 1
+        self.stage = WorkflowStage.FORUM_ADJUDICATION
         return self.stage

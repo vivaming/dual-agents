@@ -16,3 +16,4 @@ def test_export_writes_expected_files(tmp_path: Path) -> None:
     validator = (tmp_path / ".dual-agents" / "validate_report.py").read_text()
     assert "--mode" in validator
     assert "post-review" in validator
+    assert "forum" in validator

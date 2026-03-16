@@ -10,6 +10,12 @@ def build_command_markdown(config: WorkflowConfig) -> str:
     trigger = config.trigger_phrases[0]
     verification_steps = "\n".join(f"- `{command}`" for command in config.delivery_verification_commands)
     delivery_principles = "\n".join(f"- {principle}" for principle in config.delivery_principles)
+    forum_rules = ""
+    if config.forum_adjudication_enabled:
+        forum_rules = (
+            "For repeated contradictions, blocker ambiguity, or review loops that recur twice, use one bounded `FORUM_ADJUDICATION` round.\n"
+            "The forum round is not open-ended debate. It must end with a short moderator ruling and one bounded next action.\n"
+        )
     return dedent(
         f"""
         ---
@@ -28,6 +34,7 @@ def build_command_markdown(config: WorkflowConfig) -> str:
         {verification_steps}
         If the repo is dirty or ahead with unrelated work, isolate delivery work in a worktree before pushing.
         If evidence conflicts, downgrade the unit to `STALLED` or `CHANGES_REQUIRED` instead of reporting completion.
+        {forum_rules.rstrip()}
         """
     ).strip() + "\n"
 
@@ -72,6 +79,22 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
         builder_output_hygiene = (
             "Never emit internal reasoning, XML-like control tags, or copied tool/runtime text in user-facing output.\n"
         )
+    forum_adjudication_rules = ""
+    if config.forum_adjudication_enabled:
+        forum_adjudication_rules = dedent(
+            f"""
+            If contradictions persist, evidence conflicts, or a review cycle repeats twice, use one `FORUM_ADJUDICATION` round before more implementation.
+            The round is capped at {config.forum_max_rounds} pass and exists only to resolve the dispute, not to simulate a long debate.
+            Format forum adjudication exactly as:
+            Current dispute: <one sentence>
+            Perspectives:
+            - perspective 1
+            - perspective 2
+            Moderator ruling: <decision plus rationale>
+            Next bounded action: <one bounded fix>
+            Before sending this ruling, validate it with `python .dual-agents/validate_report.py --mode forum`.
+            """
+        ).strip()
 
     return {
         "dual-coordinator.md": dedent(
@@ -104,6 +127,7 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Production publish, deploy changes, and external system reconfiguration are high-risk actions and require explicit review before execution.
             When the target repo is dirty, require isolated delivery work in a worktree.
             If git state, workflow state, and run logs disagree, stop and classify the unit as `STALLED` or `CHANGES_REQUIRED`.
+            {forum_adjudication_rules}
             """
         ).strip()
         + "\n",

@@ -24,6 +24,8 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "validate_report.py" in agents["dual-coordinator.md"]
     assert "do not begin broad remediation in the same turn" in agents["dual-coordinator.md"].lower()
     assert "--mode post-review" in agents["dual-coordinator.md"]
+    assert "forum_adjudication" in agents["dual-coordinator.md"].lower()
+    assert "--mode forum" in agents["dual-coordinator.md"]
 
 
 def test_build_opencode_config_targets_zai_provider() -> None:
