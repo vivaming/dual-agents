@@ -4,7 +4,7 @@
 **Severity**: High  
 **Status**: Ready for Dev  
 **Category**: Workflow Control / Delivery Verification / Agent Reliability  
-**Related**: `/Users/mingzhang/Documents/Python/ebike/bugs/20260314-weekly-content-remote-state-mismatch.md`
+**Related**: target-repo bug card for a remote-state mismatch
 
 ---
 
@@ -41,7 +41,7 @@ The workflow declared success on the smaller local unit, then answered the user 
 
 This violated the coordinator rules in:
 
-- `/Users/mingzhang/Documents/Python/dual-agents/CONSTITUTION.md`
+- `CONSTITUTION.md`
 
 Specifically:
 
@@ -69,9 +69,7 @@ Instead it reported effective completion.
 
 ### 3. Mandatory remote verification was skipped
 
-The target repo instructions in:
-
-- `/Users/mingzhang/Documents/Python/ebike/CLAUDE.md`
+The target repo instructions explicitly required comparing local `HEAD` with the remote branch before claiming remote success.
 
 explicitly require comparing local `HEAD` with `origin/main` before claiming remote success.
 

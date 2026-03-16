@@ -79,24 +79,17 @@ This file tracks the current capabilities, constraints, and proven behaviors of 
 
 ## Persisted Assets
 
-- **global config**: `/Users/mingzhang/.config/opencode/opencode.json`
-- **global coordinator agent**: `/Users/mingzhang/.config/opencode/agents/dual-coordinator.md`
-- **global builder agent**: `/Users/mingzhang/.config/opencode/agents/glm-builder.md`
-- **global dual command**: `/Users/mingzhang/.config/opencode/commands/dual.md`
-- **Codex decision review template**: `/Users/mingzhang/Documents/Python/dual-agents/docs/templates/codex-decision-review-template.md`
+- **global config**: `$HOME/.config/opencode/opencode.json`
+- **global coordinator agent**: `$HOME/.config/opencode/agents/dual-coordinator.md`
+- **global builder agent**: `$HOME/.config/opencode/agents/glm-builder.md`
+- **global dual command**: `$HOME/.config/opencode/commands/dual.md`
+- **Codex decision review template**: `docs/templates/codex-decision-review-template.md`
 
 ## Proven Integrations
 
 - **OpenCode + Z.AI**: validated with `glm-builder`
 - **Codex CLI review path**: validated independently
-- **ebike project context**: validated; both agents can read local instructions and Task 12 context
-
-## Proven Behavior In ebike
-
-- **repo**: `/Users/mingzhang/Documents/Python/ebike`
-- **isolated worktree**: `/Users/mingzhang/Documents/Python/ebike/.worktrees/codex-dual-agent-test`
-- **validated task area**: `epic/spec-panel-gap-analysis`
-- **validated use case**: Task 12 Pair 1 remediation review and follow-up loop
+- **target-repo workflow context**: validated in a real downstream project
 
 ## Current Constraints
 

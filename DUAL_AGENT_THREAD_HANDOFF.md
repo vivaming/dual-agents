@@ -4,15 +4,15 @@ Use this file to start a new thread dedicated to the dual-agent workflow.
 
 ## Workspace
 
-- Main repo: `/Users/mingzhang/Documents/Python/ebike`
-- Dual-agent repo: `/Users/mingzhang/Documents/Python/dual-agents`
+- Target repo: `/path/to/target-repo`
+- Dual-agent repo: `/path/to/dual-agents`
 
 ## Read These First
 
-1. `/Users/mingzhang/Documents/Python/ebike/epic/spec-panel-gap-analysis/dual-agent-state.md`
-2. `/Users/mingzhang/Documents/Python/dual-agents/CONSTITUTION.md`
-3. `/Users/mingzhang/Documents/Python/dual-agents/dual-agent-features-master.md`
-4. `/Users/mingzhang/Documents/Python/dual-agents/docs/templates/codex-decision-review-template.md`
+1. `/path/to/target-repo/<workflow-control-state>.md`
+2. `/path/to/dual-agents/CONSTITUTION.md`
+3. `/path/to/dual-agents/dual-agent-features-master.md`
+4. `/path/to/dual-agents/docs/templates/codex-decision-review-template.md`
 
 ## Thread Rules
 
@@ -25,7 +25,7 @@ Use this file to start a new thread dedicated to the dual-agent workflow.
 
 ## Current Situation
 
-The repo contains mixed artifacts from Task 12 and the workflow has made some bad sequencing decisions in prior sessions.
+The target repo may contain mixed artifacts from prior sessions.
 
 Use file-backed truth, not transcript memory.
 
@@ -36,13 +36,13 @@ Important:
 ## Recommended First Prompt For The New Thread
 
 ```text
-This thread is only for the dual-agent workflow in /Users/mingzhang/Documents/Python/ebike.
+This thread is only for the dual-agent workflow in /path/to/target-repo.
 
 Read these files first and treat them as the source of truth:
-- /Users/mingzhang/Documents/Python/ebike/epic/spec-panel-gap-analysis/dual-agent-state.md
-- /Users/mingzhang/Documents/Python/dual-agents/CONSTITUTION.md
-- /Users/mingzhang/Documents/Python/dual-agents/dual-agent-features-master.md
-- /Users/mingzhang/Documents/Python/dual-agents/docs/templates/codex-decision-review-template.md
+- /path/to/target-repo/<workflow-control-state>.md
+- /path/to/dual-agents/CONSTITUTION.md
+- /path/to/dual-agents/dual-agent-features-master.md
+- /path/to/dual-agents/docs/templates/codex-decision-review-template.md
 
 Rules:
 - Do not rely on prior thread memory.
@@ -60,7 +60,7 @@ First task:
 Use this reset prompt:
 
 ```text
-Stop. Re-anchor on /Users/mingzhang/Documents/Python/ebike/epic/spec-panel-gap-analysis/dual-agent-state.md and saved review artifacts only.
+Stop. Re-anchor on /path/to/target-repo/<workflow-control-state>.md and saved review artifacts only.
 
 Do not continue implementation yet.
 Answer:
