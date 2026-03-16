@@ -1,0 +1,435 @@
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from enum import Enum
+
+from dual_agents.workflow import WorkflowStage
+
+
+class WorkflowViolation(ValueError):
+    """Raised when the workflow attempts an invalid transition or accepts invalid evidence."""
+
+
+class ReviewVerdict(str, Enum):
+    APPROVED = "APPROVED"
+    CHANGES_REQUESTED = "CHANGES_REQUESTED"
+
+
+class DeliveryProofStatus(str, Enum):
+    PROVEN = "PROVEN"
+    NOT_PROVEN = "NOT_PROVEN"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class DecisionCategory(str, Enum):
+    ORDINARY_IMPLEMENTATION = "ORDINARY_IMPLEMENTATION"
+    NEW_TASKS = "NEW_TASKS"
+    TASK_SEQUENCE_CHANGE = "TASK_SEQUENCE_CHANGE"
+    EXCEPTION_CLASSIFICATION = "EXCEPTION_CLASSIFICATION"
+    BLOCKER_CLASSIFICATION = "BLOCKER_CLASSIFICATION"
+    AMBIGUOUS_PROGRESSION = "AMBIGUOUS_PROGRESSION"
+    LATE_UNIT_SKIP = "LATE_UNIT_SKIP"
+
+
+class TaskType(str, Enum):
+    CONTENT_EDIT = "CONTENT_EDIT"
+    BUILD_RENDER = "BUILD_RENDER"
+    DATA_FIX = "DATA_FIX"
+    SCRIPT_FIX = "SCRIPT_FIX"
+    PUBLISH = "PUBLISH"
+    DEPLOY = "DEPLOY"
+    EXTERNAL_RECONFIG = "EXTERNAL_RECONFIG"
+
+
+class HighRiskAction(str, Enum):
+    PRODUCTION_PUBLISH = "PRODUCTION_PUBLISH"
+    DEPLOYMENT_CHANGE = "DEPLOYMENT_CHANGE"
+    EXTERNAL_SYSTEM_RECONFIG = "EXTERNAL_SYSTEM_RECONFIG"
+
+
+class BuilderVerdict(str, Enum):
+    PASS = "PASS"
+    CHANGES_REQUIRED = "CHANGES_REQUIRED"
+    BLOCKED = "BLOCKED"
+    STALLED = "STALLED"
+
+
+@dataclass(frozen=True)
+class ReviewResult:
+    verdict: ReviewVerdict
+    blocking_issues: tuple[str, ...]
+    non_blocking_issues: tuple[str, ...]
+    delivery_proof_status: DeliveryProofStatus
+    suggested_next_action: str
+
+    @property
+    def has_blocking_issues(self) -> bool:
+        return self.verdict == ReviewVerdict.CHANGES_REQUESTED or bool(self.blocking_issues)
+
+
+@dataclass(frozen=True)
+class BuilderResult:
+    verdict: BuilderVerdict
+    files_changed: tuple[str, ...]
+    tests_run: tuple[str, ...]
+    blockers: tuple[str, ...]
+    next_action: str
+
+    @property
+    def requires_follow_up(self) -> bool:
+        return self.verdict in {BuilderVerdict.CHANGES_REQUIRED, BuilderVerdict.BLOCKED, BuilderVerdict.STALLED}
+
+
+FIELD_PATTERNS = {
+    "verdict": re.compile(r"^\s*(?:\d+\.\s*)?Verdict:\s*(.+?)\s*$", re.IGNORECASE),
+    "blocking_issues": re.compile(r"^\s*(?:\d+\.\s*)?Blocking issues:\s*(.*?)\s*$", re.IGNORECASE),
+    "non_blocking_issues": re.compile(r"^\s*(?:\d+\.\s*)?Non-blocking issues:\s*(.*?)\s*$", re.IGNORECASE),
+    "delivery_proof_status": re.compile(
+        r"^\s*(?:\d+\.\s*)?Delivery proof status:\s*(.+?)\s*$", re.IGNORECASE
+    ),
+    "suggested_next_action": re.compile(
+        r"^\s*(?:\d+\.\s*)?Suggested next action:\s*(.+?)\s*$", re.IGNORECASE
+    ),
+}
+
+BUILDER_FIELD_PATTERNS = {
+    "verdict": re.compile(r"^\s*(?:\d+\.\s*)?Status:\s*(.+?)\s*$", re.IGNORECASE),
+    "files_changed": re.compile(r"^\s*(?:\d+\.\s*)?Files changed:\s*(.*?)\s*$", re.IGNORECASE),
+    "tests_run": re.compile(r"^\s*(?:\d+\.\s*)?Tests run:\s*(.*?)\s*$", re.IGNORECASE),
+    "blockers": re.compile(r"^\s*(?:\d+\.\s*)?Blockers:\s*(.*?)\s*$", re.IGNORECASE),
+    "next_action": re.compile(r"^\s*(?:\d+\.\s*)?Next action:\s*(.+?)\s*$", re.IGNORECASE),
+}
+
+INTERNAL_LEAK_PATTERNS = (
+    re.compile(r"^\s*Thinking:\s*", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"<(?:system|parameter|invoke)\b", re.IGNORECASE),
+    re.compile(r"^\s*#\s+Analyze\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\s*\$\s+python", re.IGNORECASE | re.MULTILINE),
+)
+
+
+def _normalize_issues(raw_value: str, continuation_lines: list[str]) -> tuple[str, ...]:
+    candidates: list[str] = []
+    if raw_value and raw_value.lower() not in {"none", "n/a"}:
+        candidates.append(raw_value)
+    for line in continuation_lines:
+        item = re.sub(r"^\s*[-*]\s*", "", line).strip()
+        if item:
+            candidates.append(item)
+    return tuple(candidates)
+
+
+def parse_review_result(raw_review: str) -> ReviewResult:
+    captured: dict[str, str] = {}
+    continuations: dict[str, list[str]] = {"blocking_issues": [], "non_blocking_issues": []}
+    active_multiline_field: str | None = None
+
+    for line in raw_review.splitlines():
+        matched_field = None
+        for field_name, pattern in FIELD_PATTERNS.items():
+            match = pattern.match(line)
+            if match:
+                captured[field_name] = match.group(1).strip()
+                active_multiline_field = field_name if field_name in continuations else None
+                matched_field = field_name
+                break
+        if matched_field is not None:
+            continue
+        if active_multiline_field and line.strip():
+            continuations[active_multiline_field].append(line)
+
+    required_fields = {"verdict", "blocking_issues", "non_blocking_issues", "delivery_proof_status", "suggested_next_action"}
+    missing_fields = sorted(required_fields - captured.keys())
+    if missing_fields:
+        raise WorkflowViolation(f"Review output missing required fields: {', '.join(missing_fields)}")
+
+    try:
+        verdict = ReviewVerdict(captured["verdict"].upper())
+    except ValueError as exc:
+        raise WorkflowViolation(f"Invalid review verdict: {captured['verdict']}") from exc
+
+    try:
+        delivery_proof_status = DeliveryProofStatus(captured["delivery_proof_status"].upper())
+    except ValueError as exc:
+        raise WorkflowViolation(
+            f"Invalid delivery proof status: {captured['delivery_proof_status']}"
+        ) from exc
+
+    suggested_next_action = captured["suggested_next_action"].strip()
+    if not suggested_next_action:
+        raise WorkflowViolation("Suggested next action must not be empty.")
+
+    return ReviewResult(
+        verdict=verdict,
+        blocking_issues=_normalize_issues(captured["blocking_issues"], continuations["blocking_issues"]),
+        non_blocking_issues=_normalize_issues(
+            captured["non_blocking_issues"], continuations["non_blocking_issues"]
+        ),
+        delivery_proof_status=delivery_proof_status,
+        suggested_next_action=suggested_next_action,
+    )
+
+
+def parse_builder_result(raw_result: str) -> BuilderResult:
+    captured: dict[str, str] = {}
+    continuations: dict[str, list[str]] = {
+        "files_changed": [],
+        "tests_run": [],
+        "blockers": [],
+    }
+    active_multiline_field: str | None = None
+
+    for line in raw_result.splitlines():
+        matched_field = None
+        for field_name, pattern in BUILDER_FIELD_PATTERNS.items():
+            match = pattern.match(line)
+            if match:
+                captured[field_name] = match.group(1).strip()
+                active_multiline_field = field_name if field_name in continuations else None
+                matched_field = field_name
+                break
+        if matched_field is not None:
+            continue
+        if active_multiline_field and line.strip():
+            continuations[active_multiline_field].append(line)
+
+    required_fields = {"verdict", "files_changed", "tests_run", "blockers", "next_action"}
+    missing_fields = sorted(required_fields - captured.keys())
+    if missing_fields:
+        raise WorkflowViolation(f"Builder output missing required fields: {', '.join(missing_fields)}")
+
+    try:
+        verdict = BuilderVerdict(captured["verdict"].upper())
+    except ValueError as exc:
+        raise WorkflowViolation(f"Invalid builder status: {captured['verdict']}") from exc
+
+    next_action = captured["next_action"].strip()
+    if not next_action:
+        raise WorkflowViolation("Builder next action must not be empty.")
+
+    return BuilderResult(
+        verdict=verdict,
+        files_changed=_normalize_issues(captured["files_changed"], continuations["files_changed"]),
+        tests_run=_normalize_issues(captured["tests_run"], continuations["tests_run"]),
+        blockers=_normalize_issues(captured["blockers"], continuations["blockers"]),
+        next_action=next_action,
+    )
+
+
+def contains_internal_leak(raw_output: str) -> bool:
+    return any(pattern.search(raw_output) for pattern in INTERNAL_LEAK_PATTERNS)
+
+
+def validate_user_facing_report(raw_output: str, *, required_terms: tuple[str, ...] = ()) -> str:
+    cleaned = raw_output.strip()
+    if not cleaned:
+        raise WorkflowViolation("User-facing report must not be empty.")
+    if contains_internal_leak(cleaned):
+        raise WorkflowViolation(
+            "User-facing report leaked internal reasoning, tool syntax, or control tags."
+        )
+    missing_terms = [term for term in required_terms if term not in cleaned]
+    if missing_terms:
+        raise WorkflowViolation(
+            f"User-facing report omitted required requested content: {', '.join(missing_terms)}"
+        )
+    return cleaned
+
+
+def build_remediation_issue_cluster(issues: tuple[str, ...], *, max_items: int = 3) -> tuple[str, ...]:
+    if max_items < 1:
+        raise WorkflowViolation("Issue cluster limit must be at least 1.")
+    cleaned = tuple(issue.strip() for issue in issues if issue.strip())
+    if not cleaned:
+        raise WorkflowViolation("Cannot build a remediation cluster from an empty issue list.")
+    return cleaned[:max_items]
+
+
+def validate_post_review_adjudication(raw_output: str, *, max_issue_count: int = 3) -> str:
+    cleaned = validate_user_facing_report(raw_output)
+    required_labels = (
+        "Current unit status:",
+        "Blocking issues:",
+        "Next remediation unit:",
+    )
+    missing_labels = [label for label in required_labels if label not in cleaned]
+    if missing_labels:
+        raise WorkflowViolation(
+            "Post-review adjudication missing required labels: " + ", ".join(missing_labels)
+        )
+    issue_lines = [
+        line for line in cleaned.splitlines()
+        if line.strip().startswith("- ") and "Blocking issues:" not in line
+    ]
+    if len(issue_lines) > max_issue_count:
+        raise WorkflowViolation(
+            f"Post-review adjudication listed {len(issue_lines)} issues; limit is {max_issue_count}."
+        )
+    if len(cleaned) > 1800:
+        raise WorkflowViolation("Post-review adjudication is too long; keep it concise and bounded.")
+    return cleaned
+
+
+def requires_critical_review(
+    *,
+    decision_category: DecisionCategory,
+    current_unit_status: str | None = None,
+) -> bool:
+    if decision_category in {
+        DecisionCategory.NEW_TASKS,
+        DecisionCategory.TASK_SEQUENCE_CHANGE,
+        DecisionCategory.EXCEPTION_CLASSIFICATION,
+        DecisionCategory.BLOCKER_CLASSIFICATION,
+        DecisionCategory.AMBIGUOUS_PROGRESSION,
+        DecisionCategory.LATE_UNIT_SKIP,
+    }:
+        return True
+
+    if current_unit_status and current_unit_status.upper() in {"PARTIAL", "UNCLEAR", "MIXED"}:
+        return True
+
+    return False
+
+
+def is_bounded_builder_task(task_summary: str) -> bool:
+    lowered = task_summary.lower()
+    broad_markers = (" and ", " then ", ";", " after that ", " once it is done ")
+    if any(marker in lowered for marker in broad_markers):
+        return False
+    return True
+
+
+@dataclass
+class WorkflowController:
+    delivery_sensitive: bool = False
+    stage: WorkflowStage = WorkflowStage.REQUEST_RECEIVED
+    last_review_result: ReviewResult | None = field(default=None, init=False)
+    last_builder_result: BuilderResult | None = field(default=None, init=False)
+    critical_review_required: bool = field(default=False, init=False)
+    builder_handoff_active: bool = field(default=False, init=False)
+    current_builder_task: str | None = field(default=None, init=False)
+    current_builder_task_type: TaskType | None = field(default=None, init=False)
+
+    def flag_decision_for_review(
+        self,
+        *,
+        decision_category: DecisionCategory,
+        current_unit_status: str | None = None,
+    ) -> bool:
+        self.critical_review_required = requires_critical_review(
+            decision_category=decision_category,
+            current_unit_status=current_unit_status,
+        )
+        return self.critical_review_required
+
+    def advance(self) -> WorkflowStage:
+        if self.stage == WorkflowStage.REQUEST_RECEIVED:
+            self.stage = WorkflowStage.EPIC_DRAFT
+        elif self.stage == WorkflowStage.EPIC_DRAFT:
+            self.stage = WorkflowStage.EPIC_REVIEW
+        elif self.stage == WorkflowStage.EPIC_REVIEW:
+            if self.critical_review_required:
+                raise WorkflowViolation(
+                    "Critical review is required before advancing from EPIC_REVIEW to implementation."
+                )
+            self.stage = WorkflowStage.IMPLEMENTATION
+        elif self.stage == WorkflowStage.IMPLEMENTATION:
+            if self.builder_handoff_active:
+                raise WorkflowViolation("Builder handoff is still active; wait for a structured result or mark it stalled.")
+            self.stage = WorkflowStage.SELF_REVIEW
+        elif self.stage == WorkflowStage.SELF_REVIEW:
+            self.stage = WorkflowStage.CRITICAL_REVIEW
+        elif self.stage == WorkflowStage.ADJUDICATION:
+            if self.critical_review_required and self.last_review_result is None:
+                raise WorkflowViolation("Critical review is required before adjudication may advance.")
+            self.stage = (
+                WorkflowStage.DELIVERY_VERIFICATION if self.delivery_sensitive else WorkflowStage.DEPLOY_READY
+            )
+        elif self.stage == WorkflowStage.DELIVERY_VERIFICATION:
+            raise WorkflowViolation("Delivery verification requires explicit proof; use verify_delivery().")
+        elif self.stage == WorkflowStage.DEPLOY_READY:
+            self.stage = WorkflowStage.DEPLOY_READY
+        else:
+            raise WorkflowViolation(f"Cannot advance automatically from stage {self.stage}.")
+        return self.stage
+
+    def submit_review(self, raw_review: str) -> ReviewResult:
+        if self.stage != WorkflowStage.CRITICAL_REVIEW:
+            raise WorkflowViolation("Review results may only be submitted during CRITICAL_REVIEW.")
+        review_result = parse_review_result(raw_review)
+        self.last_review_result = review_result
+        self.critical_review_required = False
+        self.stage = WorkflowStage.IMPLEMENTATION if review_result.has_blocking_issues else WorkflowStage.ADJUDICATION
+        return review_result
+
+    def start_builder_handoff(
+        self,
+        task_summary: str,
+        *,
+        task_types: tuple[TaskType, ...] = (),
+        high_risk_actions: tuple[HighRiskAction, ...] = (),
+        explicitly_reviewed: bool = False,
+    ) -> str:
+        if self.stage != WorkflowStage.IMPLEMENTATION:
+            raise WorkflowViolation("Builder handoff may only start during IMPLEMENTATION.")
+        bounded_task = task_summary.strip()
+        if not bounded_task:
+            raise WorkflowViolation("Builder handoff requires a non-empty bounded task.")
+        if not is_bounded_builder_task(bounded_task):
+            raise WorkflowViolation("Builder handoff must contain one bounded task, not a chained multi-step request.")
+        if len(task_types) != 1:
+            raise WorkflowViolation("Builder handoff must declare exactly one task type.")
+        if high_risk_actions and not explicitly_reviewed:
+            raise WorkflowViolation("High-risk actions require an explicit review gate before builder execution.")
+        self.builder_handoff_active = True
+        self.current_builder_task = bounded_task
+        self.current_builder_task_type = task_types[0]
+        return bounded_task
+
+    def submit_builder_result(self, raw_result: str) -> BuilderResult:
+        if self.stage != WorkflowStage.IMPLEMENTATION or not self.builder_handoff_active:
+            raise WorkflowViolation("No active builder handoff is awaiting a result.")
+        if not raw_result.strip():
+            return self._stall_builder("Builder returned empty output.")
+        builder_result = parse_builder_result(raw_result)
+        self.last_builder_result = builder_result
+        self.builder_handoff_active = False
+        self.current_builder_task = None
+        self.current_builder_task_type = None
+        if builder_result.verdict == BuilderVerdict.STALLED:
+            self.stage = WorkflowStage.IMPLEMENTATION
+            raise WorkflowViolation("Builder reported STALLED; coordinator must split scope or pause.")
+        return builder_result
+
+    def mark_builder_stalled(self, reason: str) -> WorkflowStage:
+        if self.stage != WorkflowStage.IMPLEMENTATION or not self.builder_handoff_active:
+            raise WorkflowViolation("Cannot mark builder stalled without an active builder handoff.")
+        self._stall_builder(reason)
+        raise WorkflowViolation("Builder handoff stalled; coordinator must recover before continuing.")
+
+    def _stall_builder(self, reason: str) -> BuilderResult:
+        self.last_builder_result = BuilderResult(
+            verdict=BuilderVerdict.STALLED,
+            files_changed=(),
+            tests_run=(),
+            blockers=(reason.strip() or "Builder handoff stalled.",),
+            next_action="Split the task into a smaller bounded unit or pause for guidance.",
+        )
+        self.builder_handoff_active = False
+        self.current_builder_task = None
+        self.current_builder_task_type = None
+        self.stage = WorkflowStage.IMPLEMENTATION
+        return self.last_builder_result
+
+    def verify_delivery(self, *, artifact_proven: bool, evidence_consistent: bool) -> WorkflowStage:
+        if self.stage != WorkflowStage.DELIVERY_VERIFICATION:
+            raise WorkflowViolation("Delivery may only be verified during DELIVERY_VERIFICATION.")
+        if not self.delivery_sensitive:
+            raise WorkflowViolation("Delivery verification is only valid for delivery-sensitive tasks.")
+        if not evidence_consistent:
+            raise WorkflowViolation("Conflicting evidence blocks workflow completion.")
+        if not artifact_proven:
+            raise WorkflowViolation("Remote artifact proof is required before completion.")
+        self.stage = WorkflowStage.DEPLOY_READY
+        return self.stage

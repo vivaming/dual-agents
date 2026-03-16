@@ -1,0 +1,21 @@
+[project]
+name = "dual-agents"
+version = "0.1.0"
+description = "Dual-agent orchestration layer for OpenCode workflows"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.11.0",
+  "pytest>=8.4.0",
+  "typer>=0.16.0",
+]
+
+[project.scripts]
+dual-agents = "dual_agents.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
