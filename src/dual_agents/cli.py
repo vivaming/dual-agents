@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import sys
 from pathlib import Path
 
 import typer
@@ -174,6 +177,25 @@ def default_workflow_config() -> WorkflowConfig:
     )
 
 
+def _export_assets(output_dir: Path) -> None:
+    config = default_workflow_config()
+    opencode_dir = output_dir / ".opencode"
+    agents_dir = opencode_dir / "agents"
+    commands_dir = opencode_dir / "commands"
+    prompts_dir = output_dir / ".dual-agents"
+
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    commands_dir.mkdir(parents=True, exist_ok=True)
+    prompts_dir.mkdir(parents=True, exist_ok=True)
+
+    (opencode_dir / "opencode.json").write_text(build_opencode_config(config))
+    (commands_dir / "dual.md").write_text(build_command_markdown(config))
+    for filename, content in build_agent_markdown(config).items():
+        (agents_dir / filename).write_text(content)
+    (prompts_dir / "codex-review.txt").write_text(build_review_prompt(config) + "\n")
+    (prompts_dir / "validate_report.py").write_text(build_report_validator_script())
+
+
 @app.callback()
 def app_callback() -> None:
     """Dual-agent workflow helpers."""
@@ -194,24 +216,55 @@ def preview_assets() -> None:
 
 @app.command("export")
 def export_assets(output_dir: Path = typer.Option(..., dir_okay=True, file_okay=False, writable=True)) -> None:
-    config = default_workflow_config()
-    opencode_dir = output_dir / ".opencode"
-    agents_dir = opencode_dir / "agents"
-    commands_dir = opencode_dir / "commands"
-    prompts_dir = output_dir / ".dual-agents"
-
-    agents_dir.mkdir(parents=True, exist_ok=True)
-    commands_dir.mkdir(parents=True, exist_ok=True)
-    prompts_dir.mkdir(parents=True, exist_ok=True)
-
-    (opencode_dir / "opencode.json").write_text(build_opencode_config(config))
-    (commands_dir / "dual.md").write_text(build_command_markdown(config))
-    for filename, content in build_agent_markdown(config).items():
-        (agents_dir / filename).write_text(content)
-    (prompts_dir / "codex-review.txt").write_text(build_review_prompt(config) + "\n")
-    (prompts_dir / "validate_report.py").write_text(build_report_validator_script())
-
+    _export_assets(output_dir)
     typer.echo(f"Exported dual-agent assets to {output_dir}")
+
+
+@app.command("doctor")
+def doctor() -> None:
+    checks: list[tuple[str, bool, str]] = []
+    checks.append(("python>=3.12", sys.version_info >= (3, 12), sys.version.split()[0]))
+    checks.append(("GLM_API_KEY", bool(os.getenv("GLM_API_KEY")), "set" if os.getenv("GLM_API_KEY") else "missing"))
+    checks.append(("opencode", shutil.which("opencode") is not None, shutil.which("opencode") or "not found"))
+    checks.append(("codex", shutil.which("codex") is not None, shutil.which("codex") or "not found"))
+
+    all_ok = True
+    for name, ok, detail in checks:
+        status = "OK" if ok else "MISSING"
+        typer.echo(f"{status:7} {name}: {detail}")
+        all_ok = all_ok and ok
+
+    if not all_ok:
+        raise typer.Exit(code=1)
+
+
+@app.command("init-target")
+def init_target(
+    output_dir: Path = typer.Option(..., dir_okay=True, file_okay=False, writable=True),
+    doctor_check: bool = typer.Option(True, help="Run environment checks before exporting."),
+) -> None:
+    if doctor_check:
+        missing = []
+        if sys.version_info < (3, 12):
+            missing.append("python>=3.12")
+        if not os.getenv("GLM_API_KEY"):
+            missing.append("GLM_API_KEY")
+        if shutil.which("opencode") is None:
+            missing.append("opencode")
+        if shutil.which("codex") is None:
+            missing.append("codex")
+        if missing:
+            typer.echo("Environment is not ready. Run `dual-agents doctor` and fix:", err=True)
+            for item in missing:
+                typer.echo(f"- {item}", err=True)
+            raise typer.Exit(code=1)
+
+    _export_assets(output_dir)
+    typer.echo(f"Initialized dual-agent assets in {output_dir}")
+    typer.echo("Next steps:")
+    typer.echo("1. Start a fresh OpenCode session in the target repo.")
+    typer.echo("2. Commit .opencode/ and .dual-agents/ in the target repo.")
+    typer.echo("3. Use `/dual` or the configured trigger phrase in that repo.")
 
 
 def main() -> None:

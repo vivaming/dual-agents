@@ -37,12 +37,12 @@ cd dual-agents
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-cp .env.example .env
 export GLM_API_KEY=your_key_here
-dual-agents export --output-dir /path/to/target-repo
+dual-agents doctor
+dual-agents init-target --output-dir /path/to/target-repo
 ```
 
-After export, open the target repo and commit the generated `.opencode/` and `.dual-agents/` assets there.
+After initialization, open the target repo and commit the generated `.opencode/` and `.dual-agents/` assets there.
 
 ## Usage
 
@@ -56,6 +56,18 @@ Export OpenCode and Codex assets into a target repository:
 
 ```bash
 uv run python -m dual_agents.cli export --output-dir /path/to/project
+```
+
+Check whether a new environment is ready:
+
+```bash
+dual-agents doctor
+```
+
+Initialize a target repo with the latest workflow assets and printed next steps:
+
+```bash
+dual-agents init-target --output-dir /path/to/project
 ```
 
 This writes:
