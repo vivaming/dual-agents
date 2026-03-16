@@ -31,31 +31,55 @@ Dual Agents applies this same principle to AI-assisted coding. Instead of trusti
 
 ## Why Use It?
 
-### The Problem with Single-Agent AI Coding
+### The Real Benefit: Verification, Not Just Assistance
 
-When you use a single AI agent for coding tasks, you might encounter:
+Here's what makes dual-agent workflows actually valuable:
 
-- **Blind spots**: The AI misses issues in its own work because it's too close to the problem
-- **Looping**: The AI gets stuck fixing the same issue repeatedly without making progress
-- **Quality inconsistency**: Some outputs are great, others have subtle bugs
-- **No accountability**: There's no independent check on decisions
+**Multiple models verify each other's work.** GLM-5 builds. Codex reviews. Neither works in isolation. When one model creates something, another independently evaluates it. This isn't redundancy—it's the difference between "I think this is right" and "Someone else confirmed this is right." A *review gate* is a checkpoint where the reviewer steps in—for example, before marking work complete or when claiming something is blocked—rather than running constantly during implementation.
 
-### How Dual Agents Helps
+**You save tokens without sacrificing quality.** The reviewer only runs at critical gates—when decisions matter—not constantly during implementation. This means you're not burning premium model tokens on every keystroke. Use the cheaper model for the heavy lifting; invoke the premium model only when you need a second opinion.
 
-| Problem | Solution |
-|---------|----------|
-| Blind spots | A second agent provides fresh, critical perspective |
-| Looping | Built-in loop budgets prevent endless fix/review cycles |
-| Inconsistent quality | Structured review gates ensure nothing ships without checking |
-| No accountability | Independent reviewer validates decisions at key moments |
+**In our experience, this approach can achieve quality comparable to or better than running a single premium model end-to-end.** A single agent, no matter how capable, has blind spots. Two focused agents with distinct roles often catch what one misses.
 
-### Key Benefits
+### Why Not Just Use "Agent Teams"?
 
-- **Higher code quality** through mandatory review gates
-- **Fewer bugs** reaching production
-- **Clearer workflow** with defined stages and progress tracking
-- **Prevented runaway work** through loop budgets and escalation paths
-- **Clean output** that separates final results from internal reasoning
+You've probably seen frameworks like AutoGen, CrewAI, or LangGraph's multi-agent patterns. They're popular and can be configured in lighter-weight ways, but in their common usage patterns, they're often the wrong tool for simple verification needs.
+
+Here's the uncomfortable truth: **running 3-5+ agents simultaneously is often expensive token burn.** More agents having more conversations doesn't necessarily produce better output—it often produces more output—more tokens, more noise, more confusion.
+
+The problem with agent teams (when configured to run simultaneously):
+- Every agent runs on every step = compounding costs
+- More conversations = more chances to go off track
+- Consensus-seeking can dilute strong decisions
+- You're paying for volume, not verification
+
+**Dual-agent is minimal but sufficient.** Two model-powered agents plus orchestration logic. Focused interaction. The Builder does. The Reviewer checks. The Coordinator keeps things on track. No committee meetings. No endless debates. No theatrical "collaboration" that burns tokens without adding value.
+
+Quality comes from **structured review gates**, not more agents talking.
+
+### The "More ≠ Better" Insight
+
+Most people assume: more AI agents = more things done = better results.
+
+**This assumption doesn't hold in practice.**
+
+- More agents = more noise, more cost, more confusion
+- More conversations = more chances to go off track
+- More "collaboration" often means mediocrity through compromise
+
+Better output comes from **verification**, not volume. One agent builds. One agent verifies. Done.
+
+Dual-agent focuses on **quality checkpoints**, not quantity. Every review gate exists because it matters—not because we needed an excuse for another agent to chime in.
+
+### The Cost Equation
+
+| Approach | Token Usage | Quality |
+|----------|-------------|---------|
+| Single premium model | High (runs constantly) | Good, but no verification |
+| Agent teams (3-5 agents) | Very high (all run constantly) | Can be high, depends on coordination |
+| Dual-agent workflow | Moderate (reviewer runs at gates only) | Verified, focused, efficient |
+
+If you're going to spend tokens, spend them where they matter: on verification at critical moments, not on keeping five agents in an endless group chat.
 
 ---
 

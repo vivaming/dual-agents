@@ -132,3 +132,44 @@ Created a comprehensive, user-friendly guide for the dual-agents repo covering:
 ### Review Rounds
 - Round 1: CHANGES_REQUESTED (5 issues identified)
 - Round 2: APPROVED (all issues fixed)
+
+---
+
+## Round 3: Enhance "Why Use It?" Section
+
+### User Request
+Rewrite to be more clear about:
+1. **Key benefit**: Multiple models verify answers + save tokens for same/better quality
+2. **Compare with "agent teams"**: More agents ≠ better output
+3. **Explain why**: Most people think more things done = better, but that's wrong
+
+### Changes Made
+- New "The Real Benefit: Verification, Not Just Assistance" section
+- New "Why Not Just Use 'Agent Teams'?" comparison
+- New "The 'More ≠ Better' Insight" section
+- Added cost comparison table
+
+### Review Rounds
+- Round 3.1: CHANGES_REQUESTED (6 issues - absolutes, two/three roles, quality claim)
+- Round 3.2: CHANGES_REQUESTED (minor grammar fix)
+- Round 3.2: APPROVED
+
+---
+
+## Final Status: PASS
+
+### Deliverable
+- `epic/documentation/USER_GUIDE.md` (revised)
+
+### Summary of All Changes
+1. Initial USER_GUIDE.md created (389 lines)
+2. Added early framing about portable scaffold
+3. Clarified target repo usage
+4. Added preview/export commands
+5. Labeled Forum Adjudication as experimental
+6. **Rewrote "Why Use It?" section** with:
+   - Multiple models verification benefit
+   - Token efficiency messaging
+   - Agent teams comparison
+   - "More ≠ Better" insight
+   - Cost comparison table
