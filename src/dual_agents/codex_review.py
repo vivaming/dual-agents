@@ -19,6 +19,13 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         summary_rules = (
             "When the requested result is a coverage/completeness/status summary, require the response to contain the requested per-brand or per-item breakdown instead of code or analysis scaffolding.\n"
         )
+    forum_rules = ""
+    if config.forum_adjudication_enabled:
+        forum_rules = (
+            f"If contradictions persist, evidence conflicts, or review loops recur twice, require one bounded `FORUM_ADJUDICATION` round rather than another broad rewrite.\n"
+            "A valid forum ruling must contain only: current dispute, short perspectives, moderator ruling, and one bounded next action.\n"
+            f"Reject any forum output that becomes open-ended debate or exceeds {config.forum_max_rounds} round.\n"
+        )
     return dedent(
         f"""
         You are the critical reviewer in the dual-agent workflow.
@@ -37,6 +44,7 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         After a `CHANGES_REQUESTED` verdict, prefer one bounded remediation cluster over a broad rewrite plan.
         If the coordinator tries to absorb the full review into a long implementation narrative, treat that as a workflow defect and require a narrower next action.
         A valid post-review handoff should contain only: current unit status, a short blocking-issue list, and one bounded remediation unit.
+        {forum_rules.rstrip()}
         Prefer 3-5 evidence files, concise facts, and explicit questions over long narrative context.
         If a review times out, narrow the packet instead of retrying the same broad request.
         Check remote-delivery proof using evidence equivalent to:

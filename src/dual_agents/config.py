@@ -43,3 +43,7 @@ class WorkflowConfig(BaseModel):
     require_structured_status_breakdowns: bool = True
     post_review_issue_cluster_limit: int = 3
     enforce_post_review_adjudication_contract: bool = True
+    forum_adjudication_enabled: bool = False
+    forum_trigger_on_conflicting_evidence: bool = True
+    forum_trigger_on_repeated_review_cycles: bool = True
+    forum_max_rounds: int = 1

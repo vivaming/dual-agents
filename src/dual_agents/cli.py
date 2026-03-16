@@ -37,13 +37,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Validate a user-facing dual-agent report.")
     parser.add_argument(
         "--mode",
-        choices=("summary", "post-review"),
+        choices=("summary", "post-review", "forum"),
         default="summary",
         help="Validation mode.",
     )
     parser.add_argument("--report-file", type=Path, help="Path to a file containing the report text.")
     parser.add_argument("--require-term", action="append", default=[], help="Term that must appear in the report.")
     parser.add_argument("--max-issues", type=int, default=3, help="Maximum issue bullets for post-review mode.")
+    parser.add_argument(
+        "--max-perspectives",
+        type=int,
+        default=3,
+        help="Maximum perspective bullets for forum mode.",
+    )
     args = parser.parse_args()
 
     if args.report_file:
@@ -93,6 +99,33 @@ def main() -> int:
         if len(cleaned) > 1800:
             print("ERROR: post-review adjudication is too long; keep it concise and bounded.", file=sys.stderr)
             return 1
+    elif args.mode == "forum":
+        required_labels = (
+            "Current dispute:",
+            "Perspectives:",
+            "Moderator ruling:",
+            "Next bounded action:",
+        )
+        missing_labels = [label for label in required_labels if label not in cleaned]
+        if missing_labels:
+            print(
+                "ERROR: forum ruling missing required labels: " + ", ".join(missing_labels),
+                file=sys.stderr,
+            )
+            return 1
+        perspective_lines = [
+            line for line in cleaned.splitlines()
+            if line.strip().startswith("- ") and "Perspectives:" not in line
+        ]
+        if len(perspective_lines) > args.max_perspectives:
+            print(
+                f"ERROR: forum ruling listed {len(perspective_lines)} perspectives; limit is {args.max_perspectives}.",
+                file=sys.stderr,
+            )
+            return 1
+        if len(cleaned) > 1600:
+            print("ERROR: forum ruling is too long; keep it concise and bounded.", file=sys.stderr)
+            return 1
 
     print("OK")
     return 0
@@ -136,6 +169,7 @@ def default_workflow_config() -> WorkflowConfig:
             "If the working tree contains unrelated work, isolate delivery changes before publishing.",
             "If evidence conflicts, stop and classify the unit as STALLED or CHANGES_REQUIRED.",
         ],
+        forum_adjudication_enabled=True,
     )
 
 

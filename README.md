@@ -17,6 +17,7 @@ The coordinator logic stays local so the workflow can be reused across projects 
 - review packets are narrowed into small decision-shaped requests before Codex review
 - clean user-facing output is enforced by default so internal reasoning and tool transcript fragments do not leak into answers
 - coverage/completeness/status requests default to structured per-brand or per-item summaries instead of analysis scaffolding
+- an experimental `FORUM_ADJUDICATION` mode can resolve repeated contradictions with one bounded moderator ruling instead of open-ended debate
 
 ## Required Local Setup
 
@@ -48,6 +49,8 @@ This writes:
 - `.opencode/agents/*.md`
 - `.opencode/commands/dual.md`
 - `.dual-agents/codex-review.txt`
+
+For the forum-adjudication experiment and its evaluation metrics, see [docs/forum-adjudication-eval.md](/Users/mingzhang/Documents/Python/dual-agents/.worktrees/codex/forum-adjudication/docs/forum-adjudication-eval.md) and [docs/forum-replay-eval.md](/Users/mingzhang/Documents/Python/dual-agents/.worktrees/codex/forum-adjudication/docs/forum-replay-eval.md).
 
 ## Secrets
 

@@ -8,3 +8,7 @@ def test_workflow_loops_back_on_blocking_review() -> None:
 def test_workflow_requires_delivery_verification_before_deploy_ready() -> None:
     assert next_stage(WorkflowStage.ADJUDICATION) == WorkflowStage.DELIVERY_VERIFICATION
     assert next_stage(WorkflowStage.DELIVERY_VERIFICATION) == WorkflowStage.DEPLOY_READY
+
+
+def test_forum_adjudication_returns_to_implementation() -> None:
+    assert next_stage(WorkflowStage.FORUM_ADJUDICATION) == WorkflowStage.IMPLEMENTATION

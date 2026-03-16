@@ -11,6 +11,7 @@ class WorkflowStage(str, Enum):
     SELF_REVIEW = "self_review"
     CRITICAL_REVIEW = "critical_review"
     ADJUDICATION = "adjudication"
+    FORUM_ADJUDICATION = "forum_adjudication"
     DELIVERY_VERIFICATION = "delivery_verification"
     DEPLOY_READY = "deploy_ready"
 
@@ -30,6 +31,8 @@ def next_stage(stage: WorkflowStage, has_blocking_issues: bool = False) -> Workf
         return WorkflowStage.IMPLEMENTATION if has_blocking_issues else WorkflowStage.ADJUDICATION
     if stage == WorkflowStage.ADJUDICATION:
         return WorkflowStage.DELIVERY_VERIFICATION
+    if stage == WorkflowStage.FORUM_ADJUDICATION:
+        return WorkflowStage.IMPLEMENTATION
     if stage == WorkflowStage.DELIVERY_VERIFICATION:
         return WorkflowStage.DEPLOY_READY
     return WorkflowStage.DEPLOY_READY
