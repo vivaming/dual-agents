@@ -47,3 +47,10 @@ class WorkflowConfig(BaseModel):
     forum_trigger_on_conflicting_evidence: bool = True
     forum_trigger_on_repeated_review_cycles: bool = True
     forum_max_rounds: int = 1
+    premium_review_optimize_enabled: bool = False
+    premium_review_on_new_tasks: bool = True
+    premium_review_on_task_sequence_change: bool = True
+    premium_review_on_high_risk_actions: bool = True
+    premium_review_on_conflicting_evidence: bool = True
+    premium_review_on_repeated_review_cycles: int = 2
+    premium_review_on_delivery_sensitive: bool = True

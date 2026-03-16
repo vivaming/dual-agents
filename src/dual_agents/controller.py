@@ -328,6 +328,43 @@ def requires_critical_review(
     return False
 
 
+def requires_premium_review(
+    *,
+    premium_optimize_enabled: bool,
+    decision_category: DecisionCategory = DecisionCategory.ORDINARY_IMPLEMENTATION,
+    delivery_sensitive: bool = False,
+    conflicting_evidence: bool = False,
+    repeated_review_cycles: int = 0,
+    high_risk_actions: tuple[HighRiskAction, ...] = (),
+    current_unit_status: str | None = None,
+    premium_on_new_tasks: bool = True,
+    premium_on_task_sequence_change: bool = True,
+    premium_on_high_risk_actions: bool = True,
+    premium_on_conflicting_evidence: bool = True,
+    premium_on_repeated_review_cycles: int = 2,
+    premium_on_delivery_sensitive: bool = True,
+) -> bool:
+    if not premium_optimize_enabled:
+        return True
+
+    if current_unit_status and current_unit_status.upper() in {"PARTIAL", "UNCLEAR", "MIXED"}:
+        return True
+
+    if premium_on_new_tasks and decision_category == DecisionCategory.NEW_TASKS:
+        return True
+    if premium_on_task_sequence_change and decision_category == DecisionCategory.TASK_SEQUENCE_CHANGE:
+        return True
+    if premium_on_high_risk_actions and high_risk_actions:
+        return True
+    if premium_on_conflicting_evidence and conflicting_evidence:
+        return True
+    if repeated_review_cycles >= premium_on_repeated_review_cycles:
+        return True
+    if premium_on_delivery_sensitive and delivery_sensitive:
+        return True
+    return False
+
+
 def is_bounded_builder_task(task_summary: str) -> bool:
     lowered = task_summary.lower()
     broad_markers = (" and ", " then ", ";", " after that ", " once it is done ")

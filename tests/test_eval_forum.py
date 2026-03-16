@@ -9,4 +9,5 @@ def test_forum_eval_shows_robustness_gain_with_bounded_growth() -> None:
     assert report["delta"]["coordinator_prompt_growth_chars"] > 0
     assert report["replay"]["delta"]["scenario_protection_gain"] == 0.286
     assert report["replay"]["delta"]["adjudication_applicability_gain"] == 0.667
+    assert report["replay"]["delta"]["premium_review_call_reduction"] == 0.571
     assert report["recommendation"]["adopt_forum_adjudication"] is True

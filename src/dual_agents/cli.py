@@ -170,6 +170,7 @@ def default_workflow_config() -> WorkflowConfig:
             "If evidence conflicts, stop and classify the unit as STALLED or CHANGES_REQUIRED.",
         ],
         forum_adjudication_enabled=True,
+        premium_review_optimize_enabled=True,
     )
 
 
