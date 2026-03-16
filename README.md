@@ -50,7 +50,7 @@ This writes:
 - `.opencode/commands/dual.md`
 - `.dual-agents/codex-review.txt`
 
-For the forum-adjudication experiment and its evaluation metrics, see [docs/forum-adjudication-eval.md](/Users/mingzhang/Documents/Python/dual-agents/.worktrees/codex/forum-adjudication/docs/forum-adjudication-eval.md).
+For the forum-adjudication experiment and its evaluation metrics, see [docs/forum-adjudication-eval.md](/Users/mingzhang/Documents/Python/dual-agents/.worktrees/codex/forum-adjudication/docs/forum-adjudication-eval.md) and [docs/forum-replay-eval.md](/Users/mingzhang/Documents/Python/dual-agents/.worktrees/codex/forum-adjudication/docs/forum-replay-eval.md).
 
 ## Secrets
 

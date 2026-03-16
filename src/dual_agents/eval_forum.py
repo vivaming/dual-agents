@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from dual_agents.cli import build_report_validator_script, default_workflow_config
 from dual_agents.codex_review import build_review_prompt
+from dual_agents.eval_replay import evaluate_replay_scenarios
 from dual_agents.controller import WorkflowViolation, validate_forum_ruling
 from dual_agents.opencode_assets import build_agent_markdown
 from dual_agents.workflow import WorkflowStage
@@ -88,6 +89,7 @@ def _build_metrics(*, forum_enabled: bool) -> EvalMetrics:
 def evaluate_forum_adjudication() -> dict[str, object]:
     baseline = _build_metrics(forum_enabled=False)
     experiment = _build_metrics(forum_enabled=True)
+    replay = evaluate_replay_scenarios()
 
     robustness_gain = experiment.robustness_score - baseline.robustness_score
     prompt_growth = (
@@ -100,6 +102,8 @@ def evaluate_forum_adjudication() -> dict[str, object]:
     recommended = (
         robustness_gain >= 4
         and experiment.malformed_forum_catch_rate >= 1.0
+        and replay["delta"]["scenario_protection_gain"] >= 0.14
+        and replay["delta"]["adjudication_applicability_gain"] >= 0.5
         and prompt_growth <= 1200
         and validator_growth <= 900
         and experiment.workflow_stage_count - baseline.workflow_stage_count <= 0
@@ -119,12 +123,13 @@ def evaluate_forum_adjudication() -> dict[str, object]:
             "validator_growth_chars": validator_growth,
             "complexity_cost_chars": complexity_cost,
         },
+        "replay": replay,
         "recommendation": {
             "adopt_forum_adjudication": recommended,
             "reason": (
-                "Material robustness gain with bounded prompt/validator growth."
+                "Material robustness gain with bounded prompt growth and better replay protection."
                 if recommended
-                else "Robustness gain is not high enough relative to complexity cost."
+                else "Replay protection or robustness gain is not high enough relative to complexity cost."
             ),
         },
     }
