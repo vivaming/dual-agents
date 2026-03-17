@@ -1,5 +1,7 @@
 # Dual Agents
 
+![Dual Agents Cover](docs/assets/cover.png)
+
 Dual Agents is a portable Python scaffold for a dual-agent workflow built around two tools:
 
 - `OpenCode` runs the implementation agent with `GLM-5`
