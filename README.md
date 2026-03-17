@@ -2,13 +2,6 @@
 
 ![Dual Agents Logo](docs/assets/logo.png)
 
-Dual Agents is a portable Python scaffold for a dual-agent workflow built around two tools:
-
-- `OpenCode` runs the implementation agent with `GLM-5`
-- `Codex CLI` runs the critical review step with your ChatGPT-authenticated Codex session
-
-The coordinator logic stays local so the workflow can be reused across projects without copying per-repo model wiring.
-
 > Two agents. **One verified result.**
 
 ---
@@ -22,6 +15,13 @@ The coordinator logic stays local so the workflow can be reused across projects 
 **The result: verified output at a fraction of the token cost.** You are not burning premium tokens on every keystroke, only when verification counts.
 
 `-> TOKEN EFFICIENT` `-> LOOP PREVENTION` `-> CLEAN RESULTS`
+
+Dual Agents is a portable Python scaffold for a dual-agent workflow built around two tools:
+
+- `OpenCode` runs the implementation agent with `GLM-5`
+- `Codex CLI` runs the critical review step with your ChatGPT-authenticated Codex session
+
+The coordinator logic stays local so the workflow can be reused across projects without copying per-repo model wiring.
 
 ## Current Design
 
