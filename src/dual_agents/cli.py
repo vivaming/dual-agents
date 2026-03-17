@@ -13,6 +13,11 @@ from dual_agents.config import AgentConfig, ProviderConfig, ReviewerConfig, Work
 from dual_agents.opencode_assets import build_agent_markdown, build_command_markdown, build_opencode_config
 
 app = typer.Typer(help="CLI for the dual-agent workflow.", no_args_is_help=True)
+TRANSIENT_OPCODE_PATHS = (
+    Path(".opencode") / "node_modules",
+    Path(".opencode") / "package.json",
+    Path(".opencode") / "bun.lock",
+)
 
 
 def build_report_validator_script() -> str:
@@ -184,10 +189,18 @@ def _export_assets(output_dir: Path) -> None:
     commands_dir = opencode_dir / "commands"
     prompts_dir = output_dir / ".dual-agents"
 
+    for relative_path in TRANSIENT_OPCODE_PATHS:
+        transient_path = output_dir / relative_path
+        if transient_path.is_dir():
+            shutil.rmtree(transient_path)
+        elif transient_path.exists():
+            transient_path.unlink()
+
     agents_dir.mkdir(parents=True, exist_ok=True)
     commands_dir.mkdir(parents=True, exist_ok=True)
     prompts_dir.mkdir(parents=True, exist_ok=True)
 
+    (opencode_dir / ".gitignore").write_text("node_modules\npackage.json\nbun.lock\n")
     (opencode_dir / "opencode.json").write_text(build_opencode_config(config))
     (commands_dir / "dual.md").write_text(build_command_markdown(config))
     for filename, content in build_agent_markdown(config).items():

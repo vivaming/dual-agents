@@ -173,3 +173,13 @@ Rewrite to be more clear about:
    - Agent teams comparison
    - "More ≠ Better" insight
    - Cost comparison table
+7. **Added Workflow Architecture diagram** (Mermaid):
+   - Color-coded layers (User, Coordination, Implementation, Review, Validation, Escalation)
+   - Added Adjudication and Delivery Verification to success path
+   - Fixed loop-back and escalation paths
+   - Removed non-existent legend entries
+8. **Created cover.html** (modern design for social preview)
+
+---
+
+## Final Status: READY TO PUSH

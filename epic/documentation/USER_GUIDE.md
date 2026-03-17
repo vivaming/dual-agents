@@ -85,6 +85,78 @@ If you're going to spend tokens, spend them where they matter: on verification a
 
 ## How It Works
 
+### Workflow Architecture
+
+The diagram below shows how your request flows through the dual-agent system—from the moment you make a request until you receive verified, production-ready output.
+
+```mermaid
+flowchart TB
+    subgraph USER["👤 USER"]
+        request["📝 Your Request"]
+        output["✅ Clean Result"]
+    end
+
+    subgraph COORDINATION["🎯 COORDINATION LAYER"]
+        coord["🧠 COORDINATOR<br/>(GLM-5)<br/><small>Plans • Routes • Tracks</small>"]
+    end
+
+    subgraph IMPLEMENTATION["🔧 IMPLEMENTATION LAYER"]
+        builder["⚙️ BUILDER<br/>(GLM-5)<br/><small>Writes Code • Edits Files • Runs Tests</small>"]
+    end
+
+    subgraph REVIEW["🔍 REVIEW LAYER"]
+        reviewer["🔎 REVIEWER<br/>(Codex CLI)<br/><small>Quality Gates • Issue Detection</small>"]
+        decision{"Issues<br/>Found?"}
+    end
+
+    subgraph VALIDATION["⚖️ VALIDATION LAYER"]
+        adjudication["⚖️ ADJUDICATION<br/><small>Resolves Remaining Issues</small>"]
+        delivery["📦 DELIVERY VERIFICATION<br/><small>Optional • Confirms Completion</small>"]
+    end
+
+    subgraph ESCALATION["⚠️ ESCALATION LAYER"]
+        auditor["🏛️ INDEPENDENT AUDITOR<br/><small>Breaks Deadlocks</small>"]
+        loopcheck{"Repeated<br/>Cycles?"}
+    end
+
+    %% Main Flow
+    request --> coord
+    coord -->|"Delegates Task"| builder
+    builder -->|"Submits Work"| reviewer
+    reviewer --> decision
+
+    %% Decision Paths
+    decision -->|"All Clear ✓"| adjudication
+    decision -->|"Issues Found"| loopcheck
+
+    %% Success Path with Adjudication and Optional Delivery Verification
+    adjudication -->|"Work Verified"| delivery
+    delivery -->|"Delivery Confirmed"| output
+    adjudication -->|"Non-Delivery Task"| output
+
+    %% Loop Back
+    loopcheck -->|"Under Threshold"| builder
+    loopcheck -->|"Threshold Exceeded"| auditor
+    auditor -->|"Resolution"| builder
+
+    %% Styling
+    style USER fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style COORDINATION fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style IMPLEMENTATION fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style REVIEW fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    style VALIDATION fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style ESCALATION fill:#ffebee,stroke:#c62828,stroke-width:2px
+
+    style coord fill:#bbdefb,stroke:#1565c0
+    style builder fill:#ffe0b2,stroke:#ef6c00
+    style reviewer fill:#f8bbd9,stroke:#c2185b
+    style adjudication fill:#e1bee7,stroke:#7b1fa2
+    style delivery fill:#e1bee7,stroke:#7b1fa2
+    style auditor fill:#ffcdd2,stroke:#c62828
+    style decision fill:#fff,stroke:#666
+    style loopcheck fill:#fff,stroke:#666
+```
+
 ### The Three Roles
 
 ```
@@ -110,6 +182,35 @@ If you're going to spend tokens, spend them where they matter: on verification a
 │                          │    │    changes               │
 └──────────────────────────┘    └──────────────────────────┘
 ```
+
+### Diagram Legend
+
+| Element | Meaning |
+|---------|---------|
+| **👤 User** | You—the person making the request and receiving the result |
+| **🧠 Coordinator** | GLM-5 agent that plans work, routes tasks, and tracks progress |
+| **⚙️ Builder** | GLM-5 agent that implements code, edits files, and runs tests |
+| **🔎 Reviewer** | Codex CLI agent that checks work at quality gates |
+| **⚖️ Adjudication** | Resolves any remaining issues after review passes |
+| **📦 Delivery Verification** | Optional final check for delivery-sensitive work |
+| **🏛️ Independent Auditor** | Fallback mechanism when repeated review cycles persist |
+| **Diamond shapes** | Decision points where the workflow branches |
+
+### When Does Loop-Back Happen?
+
+The workflow returns work to the Builder when the Reviewer finds:
+- **Blocking issues**: Bugs, errors, or problems that must be fixed
+- **Incomplete work**: Missing requirements or unfinished components
+- **Quality concerns**: Code that doesn't meet standards
+
+### When Does Escalation Occur?
+
+The Independent Auditor steps in when:
+- **Repeated review cycles**: The same issue cluster has gone through multiple review/fix rounds without resolution
+- **Persistent disagreements**: Builder and Reviewer can't reach consensus
+- **Stuck workflow**: Progress has stalled despite multiple attempts
+
+> **Note:** Forum Adjudication is an **experimental and optional** feature (disabled by default). When enabled, it triggers based on `repeated_review_cycles` thresholds rather than a fixed round cap.
 
 #### Builder Agent (GLM-5)
 
@@ -147,13 +248,72 @@ The Coordinator is the brain of the operation. It:
 
 > **Note:** The stages below represent the internal workflow state machine defined in `src/dual_agents/workflow.py`. You don't need to interact with these directly—the system manages them automatically.
 
+```mermaid
+flowchart TD
+    subgraph PHASE1["📋 Phase 1: Planning"]
+        R1[/"📝 Request Received"/]
+        E1["📄 Epic Draft"]
+        E2["🔍 Epic Review"]
+    end
+
+    subgraph PHASE2["⚙️ Phase 2: Implementation"]
+        I1["🔧 Implementation"]
+        S1["🔎 Self Review"]
+    end
+
+    subgraph PHASE3["✅ Phase 3: Validation"]
+        C1["⚖️ Critical Review"]
+        C2{"Issues?"}
+        A1["🏛️ Adjudication"]
+    end
+
+    subgraph PHASE4["🚀 Phase 4: Delivery"]
+        D1["📦 Delivery Verification"]
+        D2[/"✅ Deploy Ready"/]
+    end
+
+    subgraph LOOP["🔄 Review Loop"]
+        L1{"Loop<br/>Limit?"}
+        AUD["🏛️ Independent<br/>Auditor"]
+    end
+
+    %% Main Flow
+    R1 --> E1 --> E2
+    E2 --> I1 --> S1 --> C1
+    C1 --> C2
+
+    %% Decision Paths
+    C2 -->|"All Clear"| A1
+    C2 -->|"Issues Found"| L1
+    L1 -->|"Under Limit"| I1
+    L1 -->|"Over Limit"| AUD
+    AUD --> I1
+
+    A1 --> D1 --> D2
+
+    %% Styling
+    style PHASE1 fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style PHASE2 fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style PHASE3 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style PHASE4 fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    style LOOP fill:#ffebee,stroke:#c62828,stroke-width:2px
+
+    style R1 fill:#c8e6c9,stroke:#2e7d32
+    style D2 fill:#c8e6c9,stroke:#2e7d32
+    style C2 fill:#fff,stroke:#666
+    style L1 fill:#fff,stroke:#666
+    style AUD fill:#ffcdd2,stroke:#c62828
+```
+
+### Visual Flow (Alternative View)
+
 ```
   Your Request
        │
        ▼
-┌─────────────────┐
-│ REQUEST RECEIVED│
-└────────┬────────┘
+╔═════════════════╗
+║ REQUEST RECEIVED║
+╚════════╤════════╝
          │
          ▼
 ┌─────────────────┐     ┌─────────────────┐
@@ -169,32 +329,33 @@ The Coordinator is the brain of the operation. It:
          │    ┌──────────────────┘
          │    │
          ▼    ▼
-┌─────────────────────────────────────────────┐
-│           CRITICAL REVIEW                   │
-│     (Independent reviewer checks work)      │
-└─────────────────────┬───────────────────────┘
+╔═══════════════════════════════════════════╗
+║           CRITICAL REVIEW                 ║
+║     (Independent reviewer checks work)    ║
+╚═════════════════════╤═════════════════════╝
                       │
           ┌───────────┴───────────┐
           │                       │
     Issues Found?           All Clear!
           │                       │
           ▼                       ▼
-   Back to                   ┌─────────────┐
-   Implementation            │ ADJUDICATION │
-          │                  └──────┬──────┘
-          │                         │
-          └────────────────────────┤
-                                   ▼
-                       ┌─────────────────────┐
-                       │ DELIVERY VERIFICATION│
-                       │   (if required)      │
-                       └──────────┬──────────┘
-                                  │
-                                  ▼
-                       ┌─────────────────────┐
-                       │    DEPLOY READY     │
-                       │    ✓ Complete!      │
-                       └─────────────────────┘
+   ┌──────────────┐         ╔═══════════════╗
+   │  Loop Back   │         │ ADJUDICATION  │
+   │ (max 5x)     │         ╚═══════╤═══════╝
+   └──────┬───────┘                 │
+          │    ┌────────────────────┘
+          │    │
+          ▼    ▼
+┌─────────────────────┐
+│ DELIVERY VERIFICATION│
+│   (if required)      │
+└──────────┬──────────┘
+           │
+           ▼
+╔═════════════════════╗
+║    DEPLOY READY     ║
+║    ✓ Complete!      ║
+╚═════════════════════╝
 ```
 
 ### Workflow Stages Explained

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DUAL AGENTS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --white: #ffffff;
+            --black: #000000;
+            --gray: #666666;
+            --light-gray: #e5e5e5;
+            --accent: #fbbf24;
+        }
+
+        html, body {
+            height: 100%;
+        }
+
+        body {
+            font-family: 'Space Grotesk', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: var(--white);
+            color: var(--black);
+            display: flex;
+            align-items: center;
+            padding: 8vw;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+        }
+
+        /* MASSIVE HEADLINE - 20% smaller */
+        .headline {
+            font-size: clamp(3.2rem, 12vw, 9.6rem);
+            font-weight: 700;
+            line-height: 0.9;
+            letter-spacing: -0.04em;
+            margin-bottom: 0.15em;
+            text-transform: uppercase;
+            color: var(--black);
+        }
+
+        .headline .accent {
+            color: var(--black);
+            background: linear-gradient(135deg, #f59e0b, #fbbf24);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* TAGLINE */
+        .tagline {
+            font-size: clamp(1.2rem, 3vw, 2rem);
+            font-weight: 300;
+            letter-spacing: 0.02em;
+            margin-bottom: 3em;
+            color: var(--gray);
+        }
+
+        .tagline strong {
+            color: var(--black);
+            font-weight: 500;
+        }
+
+        /* THE PROMPTS - PRIMARY FOCUS */
+        .prompts {
+            margin-bottom: 4em;
+        }
+
+        .prompt-label {
+            font-size: 0.75rem;
+            font-weight: 500;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 1.5em;
+        }
+
+        .prompt {
+            font-size: clamp(2rem, 5vw, 3.5rem);
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5em;
+        }
+
+        .prompt:last-child {
+            margin-bottom: 0;
+        }
+
+        .prompt .model {
+            color: var(--gray);
+            font-weight: 400;
+        }
+
+        /* EXPLANATION */
+        .explanation {
+            margin-bottom: 3em;
+            padding: 2em 0;
+            border-top: 1px solid var(--light-gray);
+            border-bottom: 1px solid var(--light-gray);
+        }
+
+        .explanation p {
+            font-size: clamp(1rem, 2vw, 1.25rem);
+            line-height: 1.7;
+            color: var(--gray);
+            margin-bottom: 1em;
+        }
+
+        .explanation p:last-child {
+            margin-bottom: 0;
+        }
+
+        .explanation strong {
+            color: var(--black);
+            font-weight: 500;
+        }
+
+        /* FEATURES - Minimal, secondary */
+        .features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2em;
+            font-size: 0.875rem;
+            color: var(--gray);
+            letter-spacing: 0.02em;
+        }
+
+        .feature {
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 500;
+        }
+
+        .feature::before {
+            content: '→';
+            margin-right: 0.5em;
+            color: var(--accent);
+        }
+
+        /* DECORATIVE LINE */
+        .line {
+            width: 100px;
+            height: 1px;
+            background: var(--black);
+            opacity: 0.2;
+            margin-bottom: 3em;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            body {
+                padding: 10vw 6vw;
+            }
+
+            .features {
+                flex-direction: column;
+                gap: 1em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- HEADLINE -->
+        <h1 class="headline">
+            DUAL<br>
+            <span class="accent">AGENTS</span>
+        </h1>
+
+        <!-- TAGLINE -->
+        <p class="tagline">
+            Two agents. <strong>One verified result.</strong>
+        </p>
+
+        <div class="line"></div>
+
+        <!-- THE PROMPTS - PRIMARY FOCUS -->
+        <div class="prompts">
+            <div class="prompt-label">How it works</div>
+            <p class="prompt">Build <span class="model">→ GLM-5</span></p>
+            <p class="prompt">Review <span class="model">→ Codex</span></p>
+            <p class="prompt">Ship <span class="model">→ Verified</span></p>
+        </div>
+
+        <!-- EXPLANATION -->
+        <div class="explanation">
+            <p>
+                <strong>GLM-5 builds your code.</strong> It writes, edits, and tests—doing the heavy lifting of implementation. This is where most of the token budget goes, because that's where the work happens.
+            </p>
+            <p>
+                <strong>Codex reviews at critical gates.</strong> Not constantly—only when decisions matter. It catches what the builder misses, validates quality, and ensures nothing ships with blocking issues.
+            </p>
+            <p>
+                <strong>The coordinator orchestrates everything.</strong> It plans the work, routes tasks to the right agent, tracks progress, and handles escalations when the builder and reviewer disagree.
+            </p>
+            <p>
+                <strong>The result: verified output at a fraction of the token cost.</strong> You're not burning premium tokens on every keystroke—only when verification counts.
+            </p>
+        </div>
+
+        <!-- FEATURES - SECONDARY -->
+        <div class="features">
+            <span class="feature">Token Efficient</span>
+            <span class="feature">Loop Prevention</span>
+            <span class="feature">Clean Results</span>
+        </div>
+    </div>
+</body>
+</html>
