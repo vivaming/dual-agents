@@ -17,6 +17,8 @@ def test_review_prompt_mentions_review_only_default() -> None:
     assert "moderator ruling" in prompt.lower()
     assert "missing launcher arguments" in prompt.lower()
     assert "unknown runtime schema" in prompt.lower()
+    assert "stop report" in prompt.lower()
+    assert "stop signal" in prompt.lower()
 
 
 def test_review_command_starts_with_codex_exec() -> None:

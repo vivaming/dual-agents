@@ -49,6 +49,8 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         If a review times out, narrow the packet instead of retrying the same broad request.
         If the coordinator reports a failed task/subagent call caused by missing launcher arguments or unknown runtime schema, treat that as a workflow defect.
         In that case, require the next action to avoid speculative subagent launches and either use a known-good handoff path or mark the unit `STALLED`.
+        If the transcript shows a workflow pause or stop, require a bounded stop report with: current unit, stop signal, matched categories, evidence, and one recovery step.
+        Prefer classifying the stop cause over another speculative retry loop.
         Check remote-delivery proof using evidence equivalent to:
         {verification_steps}
         Return only:

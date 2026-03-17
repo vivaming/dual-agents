@@ -27,4 +27,13 @@ def test_init_target_exports_assets_and_prints_next_steps(tmp_path: Path, monkey
     assert result.exit_code == 0
     assert (tmp_path / ".opencode" / "opencode.json").exists()
     assert (tmp_path / ".dual-agents" / "validate_report.py").exists()
+    assert (tmp_path / ".dual-agents" / "monitor_stop.py").exists()
     assert "Next steps:" in result.stdout
+
+
+def test_explain_stop_classifies_timeout(tmp_path: Path) -> None:
+    transcript = tmp_path / "stop.txt"
+    transcript.write_text("Error: SSE read timed out\n")
+    result = CliRunner().invoke(app, ["explain-stop", "--transcript-file", str(transcript)])
+    assert result.exit_code == 0
+    assert "Stop signal: STREAM_TIMEOUT" in result.stdout

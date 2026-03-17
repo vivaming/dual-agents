@@ -28,6 +28,8 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "--mode forum" in agents["dual-coordinator.md"]
     assert "subagent_type" in agents["dual-coordinator.md"]
     assert "schema is known" in agents["dual-coordinator.md"].lower()
+    assert "monitor_stop.py" in agents["dual-coordinator.md"]
+    assert "stop signal:" in agents["dual-coordinator.md"].lower()
     assert "return `stalled`" in agents["glm-builder.md"].lower()
 
 

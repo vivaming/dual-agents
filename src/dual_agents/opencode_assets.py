@@ -122,6 +122,15 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             - issue 2
             Next remediation unit: <one bounded fix>
             Before sending this adjudication, validate it with `python .dual-agents/validate_report.py --mode post-review`.
+            If the workflow pauses, degrades, or emits repeated malformed tool calls, save a stop report before retrying.
+            Format stop reports exactly as:
+            Current unit: <bounded unit>
+            Stop signal: <category>
+            Matched categories: <comma-separated categories>
+            Evidence:
+            - evidence line
+            Next recovery step: <single recovery step>
+            Use `python .dual-agents/monitor_stop.py --transcript-file <path>` to classify the transcript snippet before continuing.
             Classify work before execution: content edit, build/render, publish, deploy, and external reconfiguration are separate task types.
             Do not send a builder one request that mixes multiple task types.
             Do not invoke a generic task or subagent launcher unless the runtime schema is known and you can supply every required field.
@@ -154,6 +163,7 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             If the task is too broad, blocked, or you cannot produce a reliable result, return `STALLED` instead of hanging silently.
             If subagent/task-tool routing is unavailable or its schema is unclear, do not fabricate launcher arguments; return `STALLED` with the missing runtime requirement.
             Refuse chained requests that combine edit, build, publish, deploy, or external-system changes into one handoff.
+            If the session is degraded by repeated malformed tool calls or timeouts, stop and point the coordinator to a stop report instead of improvising more retries.
             """
         ).strip()
         + "\n",

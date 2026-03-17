@@ -92,9 +92,11 @@ This writes:
 - `.opencode/agents/*.md`
 - `.opencode/commands/dual.md`
 - `.dual-agents/codex-review.txt`
+- `.dual-agents/monitor_stop.py`
 
 For the forum-adjudication experiment and its evaluation metrics, see `docs/forum-adjudication-eval.md` and `docs/forum-replay-eval.md`.
 For the premium-review cost optimization experiment, see `docs/premium-token-eval.md`.
+For stop-classification replay coverage, run `python -m dual_agents.eval_stop_monitor`.
 
 ## Contribution Model
 
