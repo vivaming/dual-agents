@@ -12,6 +12,12 @@ def test_classify_stop_tool_schema_error() -> None:
     assert signal.category == StopCategory.TOOL_SCHEMA_ERROR
 
 
+def test_classify_stop_analysis_syntax_error_uses_schema_recovery() -> None:
+    signal = classify_stop("SyntaxError: invalid syntax")
+    assert signal.category == StopCategory.DATA_SHAPE_MISMATCH
+    assert "Inspect schema, fix parser" in signal.recovery
+
+
 def test_classify_stop_detects_session_degradation_from_multiple_signals() -> None:
     signal = classify_stop(
         "Error: The task tool was called with invalid arguments: expected string, received undefined path subagent_type\n"
@@ -27,4 +33,3 @@ def test_format_stop_report_contains_expected_sections() -> None:
     assert "Current unit: pilot kingbull" in report
     assert "Stop signal: STREAM_TIMEOUT" in report
     assert "Next recovery step:" in report
-

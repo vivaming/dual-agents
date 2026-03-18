@@ -123,6 +123,14 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Next remediation unit: <one bounded fix>
             Before sending this adjudication, validate it with `python .dual-agents/validate_report.py --mode post-review`.
             If the workflow pauses, degrades, or emits repeated malformed tool calls, save a stop report before retrying.
+            For spec completeness or bounded unit analysis, use the fixed analyzer only: `python .dual-agents/spec_completeness_analyzer.py --data-root data --brand-set affiliate --brand-set official`.
+            The analyzer may read only `data/<brand>/coverage_report.json` files. Do not improvise a Python heredoc, ad hoc inline script, or alternate file source for completeness analysis.
+            If completeness or bounded unit analysis emits a traceback, syntax error, or parser exception, stop immediately and produce a stop report instead of trying a second analysis path.
+            After an analysis traceback, recovery is limited to exactly these steps:
+            1. inspect schema
+            2. fix parser
+            3. rerun the same bounded analysis
+            Do not jump from a failed analysis into another pilot, rollout step, or unrelated task.
             Format stop reports exactly as:
             Current unit: <bounded unit>
             Stop signal: <category>
@@ -163,6 +171,8 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             If the task is too broad, blocked, or you cannot produce a reliable result, return `STALLED` instead of hanging silently.
             If subagent/task-tool routing is unavailable or its schema is unclear, do not fabricate launcher arguments; return `STALLED` with the missing runtime requirement.
             Refuse chained requests that combine edit, build, publish, deploy, or external-system changes into one handoff.
+            Do not write ad hoc Python heredocs for spec completeness or bounded unit analysis; use the fixed analyzer and parser path only.
+            If an analysis step throws a traceback or syntax error, stop immediately with `STALLED` and tell the coordinator to inspect schema, fix parser, and rerun the same bounded analysis.
             If the session is degraded by repeated malformed tool calls or timeouts, stop and point the coordinator to a stop report instead of improvising more retries.
             """
         ).strip()

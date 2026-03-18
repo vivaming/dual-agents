@@ -15,6 +15,7 @@ def test_export_writes_expected_files(tmp_path: Path) -> None:
     assert (tmp_path / ".dual-agents" / "codex-review.txt").exists()
     assert (tmp_path / ".dual-agents" / "validate_report.py").exists()
     assert (tmp_path / ".dual-agents" / "monitor_stop.py").exists()
+    assert (tmp_path / ".dual-agents" / "spec_completeness_analyzer.py").exists()
     validator = (tmp_path / ".dual-agents" / "validate_report.py").read_text()
     assert "--mode" in validator
     assert "post-review" in validator

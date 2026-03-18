@@ -9,6 +9,8 @@ from dual_agents.controller import (
     TaskType,
     WorkflowController,
     WorkflowViolation,
+    build_analysis_failure_stop_report,
+    contains_analysis_traceback,
     should_enter_forum_adjudication,
     requires_premium_review,
     validate_forum_ruling,
@@ -18,6 +20,7 @@ from dual_agents.controller import (
     parse_builder_result,
     parse_review_result,
     requires_critical_review,
+    validate_analysis_recovery_step,
     validate_post_review_adjudication,
     validate_user_facing_report,
 )
@@ -247,6 +250,48 @@ def test_validate_post_review_adjudication_rejects_too_many_issues() -> None:
             "- issue 4\n"
             "Next remediation unit: fix one thing"
         )
+
+
+def test_contains_analysis_traceback_detects_parser_failures() -> None:
+    assert contains_analysis_traceback("Traceback (most recent call last):\nAttributeError: boom") is True
+    assert contains_analysis_traceback("All good") is False
+
+
+def test_build_analysis_failure_stop_report_requires_bounded_recovery() -> None:
+    report = build_analysis_failure_stop_report(
+        "Traceback (most recent call last):\nSyntaxError: invalid syntax",
+        unit_name="spec completeness analysis",
+    )
+    assert "Current unit: spec completeness analysis" in report
+    assert "Stop signal: DATA_SHAPE_MISMATCH" in report
+    assert "Inspect schema, fix parser, and rerun the same bounded analysis." in report
+
+
+def test_validate_analysis_recovery_step_rejects_task_switching() -> None:
+    with pytest.raises(WorkflowViolation):
+        validate_analysis_recovery_step("run another pilot")
+
+
+def test_controller_blocks_new_task_when_analysis_hard_stop_is_active() -> None:
+    controller = WorkflowController()
+    controller.stage = WorkflowStage.IMPLEMENTATION
+    controller.hard_stop_analysis_failure(
+        "Traceback (most recent call last):\nAttributeError: 'str' object has no attribute 'get'",
+        unit_name="spec completeness analysis",
+    )
+    with pytest.raises(WorkflowViolation):
+        controller.start_builder_handoff("Pilot Tenways", task_types=(TaskType.DATA_FIX,))
+
+
+def test_controller_clears_analysis_hard_stop_only_after_valid_recovery_step() -> None:
+    controller = WorkflowController()
+    controller.stage = WorkflowStage.IMPLEMENTATION
+    controller.hard_stop_analysis_failure(
+        "Traceback (most recent call last):\nJSONDecodeError: bad",
+        unit_name="spec completeness analysis",
+    )
+    controller.clear_analysis_hard_stop("inspect schema")
+    assert controller.analysis_hard_stop_active is False
 
 
 def test_forum_adjudication_trigger_requires_real_conflict_signal() -> None:

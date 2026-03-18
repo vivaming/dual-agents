@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass, field
 from enum import Enum
 
+from dual_agents.stop_monitor import StopCategory
 from dual_agents.workflow import WorkflowStage
 
 
@@ -106,6 +107,21 @@ INTERNAL_LEAK_PATTERNS = (
     re.compile(r"<(?:system|parameter|invoke)\b", re.IGNORECASE),
     re.compile(r"^\s*#\s+Analyze\b", re.IGNORECASE | re.MULTILINE),
     re.compile(r"^\s*\$\s+python", re.IGNORECASE | re.MULTILINE),
+)
+
+ANALYSIS_FAILURE_PATTERNS = (
+    re.compile(r"Traceback \(most recent call last\):", re.IGNORECASE),
+    re.compile(r"\bAttributeError:", re.IGNORECASE),
+    re.compile(r"\bSyntaxError:", re.IGNORECASE),
+    re.compile(r"\bTypeError:", re.IGNORECASE),
+    re.compile(r"\bKeyError:", re.IGNORECASE),
+    re.compile(r"\bJSONDecodeError:", re.IGNORECASE),
+)
+
+ANALYSIS_RECOVERY_STEPS = (
+    "inspect schema",
+    "fix parser",
+    "rerun same bounded analysis",
 )
 
 
@@ -219,6 +235,42 @@ def parse_builder_result(raw_result: str) -> BuilderResult:
 
 def contains_internal_leak(raw_output: str) -> bool:
     return any(pattern.search(raw_output) for pattern in INTERNAL_LEAK_PATTERNS)
+
+
+def contains_analysis_traceback(raw_output: str) -> bool:
+    return any(pattern.search(raw_output) for pattern in ANALYSIS_FAILURE_PATTERNS)
+
+
+def build_analysis_failure_stop_report(raw_output: str, *, unit_name: str) -> str:
+    if not contains_analysis_traceback(raw_output):
+        raise WorkflowViolation("Analysis stop report requires traceback-style evidence.")
+    evidence: list[str] = []
+    for line in raw_output.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if any(pattern.search(stripped) for pattern in ANALYSIS_FAILURE_PATTERNS):
+            evidence.append(stripped)
+    evidence_lines = "\n".join(f"- {item}" for item in tuple(dict.fromkeys(evidence))[:4]) or "- none captured"
+    recovery = "Inspect schema, fix parser, and rerun the same bounded analysis."
+    return (
+        f"Current unit: {unit_name}\n"
+        f"Stop signal: {StopCategory.DATA_SHAPE_MISMATCH.value}\n"
+        f"Matched categories: {StopCategory.DATA_SHAPE_MISMATCH.value}\n"
+        "Evidence:\n"
+        f"{evidence_lines}\n"
+        f"Next recovery step: {recovery}"
+    )
+
+
+def validate_analysis_recovery_step(step: str) -> str:
+    cleaned = step.strip().lower()
+    if cleaned not in ANALYSIS_RECOVERY_STEPS:
+        raise WorkflowViolation(
+            "Analysis recovery must be one of: "
+            + ", ".join(ANALYSIS_RECOVERY_STEPS)
+        )
+    return cleaned
 
 
 def validate_user_facing_report(raw_output: str, *, required_terms: tuple[str, ...] = ()) -> str:
@@ -384,6 +436,7 @@ class WorkflowController:
     current_builder_task: str | None = field(default=None, init=False)
     current_builder_task_type: TaskType | None = field(default=None, init=False)
     forum_rounds_used: int = field(default=0, init=False)
+    analysis_hard_stop_active: bool = field(default=False, init=False)
 
     def flag_decision_for_review(
         self,
@@ -398,6 +451,10 @@ class WorkflowController:
         return self.critical_review_required
 
     def advance(self) -> WorkflowStage:
+        if self.analysis_hard_stop_active:
+            raise WorkflowViolation(
+                "Analysis hard-stop is active; recover with inspect schema, fix parser, then rerun the same bounded analysis."
+            )
         if self.stage == WorkflowStage.REQUEST_RECEIVED:
             self.stage = WorkflowStage.EPIC_DRAFT
         elif self.stage == WorkflowStage.EPIC_DRAFT:
@@ -447,6 +504,10 @@ class WorkflowController:
         high_risk_actions: tuple[HighRiskAction, ...] = (),
         explicitly_reviewed: bool = False,
     ) -> str:
+        if self.analysis_hard_stop_active:
+            raise WorkflowViolation(
+                "Analysis hard-stop is active; do not jump to another task before schema inspection, parser fix, and rerun."
+            )
         if self.stage != WorkflowStage.IMPLEMENTATION:
             raise WorkflowViolation("Builder handoff may only start during IMPLEMENTATION.")
         bounded_task = task_summary.strip()
@@ -518,3 +579,12 @@ class WorkflowController:
         self.forum_rounds_used += 1
         self.stage = WorkflowStage.FORUM_ADJUDICATION
         return self.stage
+
+    def hard_stop_analysis_failure(self, raw_output: str, *, unit_name: str) -> str:
+        report = build_analysis_failure_stop_report(raw_output, unit_name=unit_name)
+        self.analysis_hard_stop_active = True
+        return report
+
+    def clear_analysis_hard_stop(self, recovery_step: str) -> None:
+        validate_analysis_recovery_step(recovery_step)
+        self.analysis_hard_stop_active = False

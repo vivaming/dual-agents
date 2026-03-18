@@ -44,6 +44,8 @@ STOP_PATTERN_MAP: dict[StopCategory, tuple[re.Pattern[str], ...]] = {
     StopCategory.DATA_SHAPE_MISMATCH: (
         re.compile(r"AttributeError: 'str' object has no attribute 'get'", re.IGNORECASE),
         re.compile(r"Traceback \(most recent call last\):", re.IGNORECASE),
+        re.compile(r"SyntaxError:", re.IGNORECASE),
+        re.compile(r"JSONDecodeError:", re.IGNORECASE),
         re.compile(r"json.*unexpected", re.IGNORECASE),
     ),
     StopCategory.CAPABILITY_MISMATCH: (
@@ -80,7 +82,7 @@ def _recovery_for(category: StopCategory) -> tuple[str, bool]:
             True,
         ),
         StopCategory.DATA_SHAPE_MISMATCH: (
-            "Inspect the real data shape first, then rerun the bounded analysis with a parser that matches the artifact schema.",
+            "Inspect schema, fix parser, and rerun the same bounded analysis.",
             False,
         ),
         StopCategory.CAPABILITY_MISMATCH: (

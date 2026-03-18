@@ -37,3 +37,37 @@ def test_explain_stop_classifies_timeout(tmp_path: Path) -> None:
     result = CliRunner().invoke(app, ["explain-stop", "--transcript-file", str(transcript)])
     assert result.exit_code == 0
     assert "Stop signal: STREAM_TIMEOUT" in result.stdout
+
+
+def test_analyze_completeness_prints_schema_contract() -> None:
+    result = CliRunner().invoke(app, ["analyze-completeness", "--describe-schema", "--data-root", "."])
+    assert result.exit_code == 0
+    assert "coverage_report.json" in result.stdout
+
+
+def test_analyze_completeness_reads_explicit_brand_set(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    for brand in ("radpower", "ride1up", "super73", "aventon", "velotric"):
+        brand_dir = data_root / brand
+        brand_dir.mkdir(parents=True)
+        (brand_dir / "coverage_report.json").write_text(
+            "{\n"
+            f'  "brand": "{brand}",\n'
+            '  "products_attempted": 2,\n'
+            '  "products_succeeded": 2,\n'
+            '  "fields": {\n'
+            '    "motor_power_watts": {"normalized_success": 2},\n'
+            '    "battery_wh": {"normalized_success": 2},\n'
+            '    "weight_lbs": {"normalized_success": 2},\n'
+            '    "max_speed_mph": {"normalized_success": 2}\n'
+            "  }\n"
+            "}\n"
+        )
+
+    result = CliRunner().invoke(
+        app,
+        ["analyze-completeness", "--data-root", str(data_root), "--brand-set", "official"],
+    )
+    assert result.exit_code == 0
+    assert "TECH SPEC COMPLETENESS ANALYSIS" in result.stdout
+    assert "radpower" in result.stdout

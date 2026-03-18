@@ -49,6 +49,9 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         If a review times out, narrow the packet instead of retrying the same broad request.
         If the coordinator reports a failed task/subagent call caused by missing launcher arguments or unknown runtime schema, treat that as a workflow defect.
         In that case, require the next action to avoid speculative subagent launches and either use a known-good handoff path or mark the unit `STALLED`.
+        If completeness or bounded unit analysis is attempted with an ad hoc Python heredoc, alternate guessed file source, or parser that does not match the declared schema contract, treat that as a workflow defect.
+        If the transcript contains a traceback, syntax error, or parser exception during completeness/unit analysis, do not allow the workflow to continue into another pilot or task.
+        Require an immediate stop report and limit recovery to: inspect schema, fix parser, rerun the same bounded analysis.
         If the transcript shows a workflow pause or stop, require a bounded stop report with: current unit, stop signal, matched categories, evidence, and one recovery step.
         Prefer classifying the stop cause over another speculative retry loop.
         Check remote-delivery proof using evidence equivalent to:

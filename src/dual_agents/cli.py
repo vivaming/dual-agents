@@ -9,6 +9,12 @@ from pathlib import Path
 import typer
 
 from dual_agents.codex_review import build_review_command, build_review_prompt
+from dual_agents.completeness_analyzer import (
+    CompletenessAnalyzerError,
+    analyze_brand_sets,
+    format_text_report,
+    supported_schema_description,
+)
 from dual_agents.config import AgentConfig, ProviderConfig, ReviewerConfig, WorkflowConfig
 from dual_agents.opencode_assets import build_agent_markdown, build_command_markdown, build_opencode_config
 from dual_agents.stop_monitor import classify_stop, format_stop_report
@@ -197,6 +203,8 @@ STOP_PATTERN_MAP = {
     StopCategory.DATA_SHAPE_MISMATCH: (
         re.compile(r"AttributeError: 'str' object has no attribute 'get'", re.IGNORECASE),
         re.compile(r"Traceback \\(most recent call last\\):", re.IGNORECASE),
+        re.compile(r"SyntaxError:", re.IGNORECASE),
+        re.compile(r"JSONDecodeError:", re.IGNORECASE),
     ),
     StopCategory.CAPABILITY_MISMATCH: (
         re.compile(r"can't view images", re.IGNORECASE),
@@ -232,7 +240,7 @@ def _recovery_for(category: StopCategory):
             True,
         ),
         StopCategory.DATA_SHAPE_MISMATCH: (
-            "Inspect the real data shape first, then rerun the bounded analysis with a parser that matches the artifact schema.",
+            "Inspect schema, fix parser, and rerun the same bounded analysis.",
             False,
         ),
         StopCategory.CAPABILITY_MISMATCH: (
@@ -318,6 +326,240 @@ if __name__ == "__main__":
 """
 
 
+def build_completeness_analyzer_script() -> str:
+    return """#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+CRITICAL_FIELDS = (
+    "motor_power_watts",
+    "battery_wh",
+    "weight_lbs",
+    "max_speed_mph",
+)
+
+BRAND_SETS = {
+    "affiliate": (
+        "kingbull",
+        "puckipuppy",
+        "vivi",
+        "vanpowers",
+        "lacros",
+        "tenways",
+        "megawheels",
+    ),
+    "official": (
+        "radpower",
+        "ride1up",
+        "super73",
+        "aventon",
+        "velotric",
+    ),
+}
+
+SUPPORTED_INPUT_PATTERN = "data/<brand>/coverage_report.json"
+
+
+class CompletenessAnalyzerError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class BrandCompleteness:
+    brand: str
+    brand_type: str
+    models_attempted: int
+    models_succeeded: int
+    critical_coverage: dict[str, float]
+    average_critical_coverage: float
+
+
+def supported_schema_description() -> str:
+    return (
+        "Supported inputs:\\n"
+        f"- {SUPPORTED_INPUT_PATTERN}\\n"
+        "Required top-level keys in each coverage report:\\n"
+        "- brand: string\\n"
+        "- products_attempted: integer\\n"
+        "- products_succeeded: integer\\n"
+        "- fields: object\\n"
+        "Required per-field schema for critical fields:\\n"
+        "- normalized_success: integer\\n"
+    )
+
+
+def _require_dict(payload: object, *, context: str) -> dict[str, object]:
+    if not isinstance(payload, dict):
+        raise CompletenessAnalyzerError(f"{context} must be an object.")
+    return payload
+
+
+def _require_int(payload: dict[str, object], key: str, *, context: str) -> int:
+    value = payload.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise CompletenessAnalyzerError(f"{context}.{key} must be an integer.")
+    return value
+
+
+def _require_string(payload: dict[str, object], key: str, *, context: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise CompletenessAnalyzerError(f"{context}.{key} must be a non-empty string.")
+    return value.strip()
+
+
+def _load_json(path: Path) -> dict[str, object]:
+    try:
+        raw = json.loads(path.read_text())
+    except FileNotFoundError as exc:
+        raise CompletenessAnalyzerError(f"Missing required coverage report: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise CompletenessAnalyzerError(f"Invalid JSON in {path}: {exc}") from exc
+    return _require_dict(raw, context=str(path))
+
+
+def load_coverage_report(path: Path) -> dict[str, object]:
+    payload = _load_json(path)
+    _require_string(payload, "brand", context=str(path))
+    attempted = _require_int(payload, "products_attempted", context=str(path))
+    succeeded = _require_int(payload, "products_succeeded", context=str(path))
+    if attempted < 0 or succeeded < 0:
+        raise CompletenessAnalyzerError(f"{path} product counters must be non-negative.")
+    fields = _require_dict(payload.get("fields"), context=f"{path}.fields")
+    for field_name in CRITICAL_FIELDS:
+        field_payload = _require_dict(fields.get(field_name), context=f"{path}.fields.{field_name}")
+        normalized_success = _require_int(
+            field_payload,
+            "normalized_success",
+            context=f"{path}.fields.{field_name}",
+        )
+        if normalized_success < 0:
+            raise CompletenessAnalyzerError(
+                f"{path}.fields.{field_name}.normalized_success must be non-negative."
+            )
+    return payload
+
+
+def analyze_brand(data_root: Path, *, brand: str, brand_type: str) -> BrandCompleteness:
+    report_path = data_root / brand / "coverage_report.json"
+    payload = load_coverage_report(report_path)
+    attempted = _require_int(payload, "products_attempted", context=str(report_path))
+    succeeded = _require_int(payload, "products_succeeded", context=str(report_path))
+    denominator = succeeded if succeeded > 0 else attempted
+    fields = _require_dict(payload["fields"], context=f"{report_path}.fields")
+
+    critical_coverage: dict[str, float] = {}
+    for field_name in CRITICAL_FIELDS:
+        field_payload = _require_dict(fields[field_name], context=f"{report_path}.fields.{field_name}")
+        normalized_success = _require_int(
+            field_payload,
+            "normalized_success",
+            context=f"{report_path}.fields.{field_name}",
+        )
+        critical_coverage[field_name] = 0.0 if denominator <= 0 else normalized_success / denominator
+
+    average = sum(critical_coverage.values()) / len(CRITICAL_FIELDS)
+    return BrandCompleteness(
+        brand=brand,
+        brand_type=brand_type,
+        models_attempted=attempted,
+        models_succeeded=succeeded,
+        critical_coverage=critical_coverage,
+        average_critical_coverage=average,
+    )
+
+
+def analyze_brand_sets(data_root: Path, *, brand_set_names: tuple[str, ...]) -> list[BrandCompleteness]:
+    results: list[BrandCompleteness] = []
+    for brand_set_name in brand_set_names:
+        try:
+            brands = BRAND_SETS[brand_set_name]
+        except KeyError as exc:
+            raise CompletenessAnalyzerError(f"Unsupported brand set: {brand_set_name}") from exc
+        for brand in brands:
+            results.append(analyze_brand(data_root, brand=brand, brand_type=brand_set_name.capitalize()))
+    return results
+
+
+def format_text_report(results: list[BrandCompleteness]) -> str:
+    lines = [
+        "TECH SPEC COMPLETENESS ANALYSIS",
+        f"Inputs: {SUPPORTED_INPUT_PATTERN}",
+        "",
+        "Brand            Type        Attempted  Succeeded  Motor   Battery  Weight  Speed   Avg",
+        "-----------------------------------------------------------------------------------------",
+    ]
+    for result in results:
+        motor = result.critical_coverage["motor_power_watts"] * 100
+        battery = result.critical_coverage["battery_wh"] * 100
+        weight = result.critical_coverage["weight_lbs"] * 100
+        speed = result.critical_coverage["max_speed_mph"] * 100
+        avg = result.average_critical_coverage * 100
+        lines.append(
+            f"{result.brand:<16} {result.brand_type:<11} {result.models_attempted:<10} "
+            f"{result.models_succeeded:<10} {motor:>5.1f}%  {battery:>6.1f}%  {weight:>5.1f}%  "
+            f"{speed:>5.1f}%  {avg:>5.1f}%"
+        )
+    return "\\n".join(lines)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Analyze spec completeness from explicit coverage reports only.")
+    parser.add_argument("--data-root", type=Path, required=True, help="Path to the data directory.")
+    parser.add_argument(
+        "--brand-set",
+        action="append",
+        choices=tuple(BRAND_SETS),
+        default=[],
+        help="Brand set to analyze. Repeat to include multiple sets.",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit JSON instead of a text report.")
+    parser.add_argument("--describe-schema", action="store_true", help="Print supported file/schema contract and exit.")
+    args = parser.parse_args()
+
+    if args.describe_schema:
+        print(supported_schema_description())
+        return 0
+
+    brand_sets = tuple(args.brand_set) or ("affiliate", "official")
+    try:
+        results = analyze_brand_sets(args.data_root, brand_set_names=brand_sets)
+    except CompletenessAnalyzerError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    if args.json:
+        print(
+            json.dumps(
+                [
+                    {
+                        "brand": result.brand,
+                        "type": result.brand_type,
+                        "models_attempted": result.models_attempted,
+                        "models_succeeded": result.models_succeeded,
+                        "critical_coverage": result.critical_coverage,
+                        "average_critical_coverage": result.average_critical_coverage,
+                    }
+                    for result in results
+                ],
+                indent=2,
+            )
+        )
+    else:
+        print(format_text_report(results))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
+
+
 def default_workflow_config() -> WorkflowConfig:
     glm_provider = ProviderConfig(
         name="glm",
@@ -382,6 +624,7 @@ def _export_assets(output_dir: Path) -> None:
     (prompts_dir / "codex-review.txt").write_text(build_review_prompt(config) + "\n")
     (prompts_dir / "validate_report.py").write_text(build_report_validator_script())
     (prompts_dir / "monitor_stop.py").write_text(build_stop_monitor_script())
+    (prompts_dir / "spec_completeness_analyzer.py").write_text(build_completeness_analyzer_script())
 
 
 @app.callback()
@@ -409,6 +652,46 @@ def explain_stop(
 ) -> None:
     signal = classify_stop(transcript_file.read_text())
     typer.echo(format_stop_report(signal, unit_name=unit_name))
+
+
+@app.command("analyze-completeness")
+def analyze_completeness(
+    data_root: Path = typer.Option(..., "--data-root", exists=True, file_okay=False, dir_okay=True),
+    brand_set: list[str] | None = typer.Option(None, "--brand-set"),
+    json_output: bool = typer.Option(False, "--json"),
+    describe_schema: bool = typer.Option(False, "--describe-schema"),
+) -> None:
+    if describe_schema:
+        typer.echo(supported_schema_description().rstrip())
+        return
+
+    brand_sets = tuple(brand_set) if brand_set else ("affiliate", "official")
+    try:
+        results = analyze_brand_sets(data_root, brand_set_names=brand_sets)
+    except CompletenessAnalyzerError as exc:
+        typer.echo(f"ERROR: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                [
+                    {
+                        "brand": result.brand,
+                        "type": result.brand_type,
+                        "models_attempted": result.models_attempted,
+                        "models_succeeded": result.models_succeeded,
+                        "critical_coverage": result.critical_coverage,
+                        "average_critical_coverage": result.average_critical_coverage,
+                    }
+                    for result in results
+                ],
+                indent=2,
+            )
+        )
+        return
+
+    typer.echo(format_text_report(results))
 
 
 @app.command("export")

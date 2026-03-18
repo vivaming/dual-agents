@@ -29,8 +29,12 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "subagent_type" in agents["dual-coordinator.md"]
     assert "schema is known" in agents["dual-coordinator.md"].lower()
     assert "monitor_stop.py" in agents["dual-coordinator.md"]
+    assert "spec_completeness_analyzer.py" in agents["dual-coordinator.md"]
+    assert "do not improvise a python heredoc" in agents["dual-coordinator.md"].lower()
+    assert "inspect schema" in agents["dual-coordinator.md"].lower()
     assert "stop signal:" in agents["dual-coordinator.md"].lower()
     assert "return `stalled`" in agents["glm-builder.md"].lower()
+    assert "do not write ad hoc python heredocs" in agents["glm-builder.md"].lower()
 
 
 def test_build_opencode_config_targets_zai_provider() -> None:
