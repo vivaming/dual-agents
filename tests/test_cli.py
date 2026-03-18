@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from subprocess import CompletedProcess
 
 from typer.testing import CliRunner
 
@@ -28,6 +29,7 @@ def test_init_target_exports_assets_and_prints_next_steps(tmp_path: Path, monkey
     assert (tmp_path / ".opencode" / "opencode.json").exists()
     assert (tmp_path / ".dual-agents" / "validate_report.py").exists()
     assert (tmp_path / ".dual-agents" / "monitor_stop.py").exists()
+    assert (tmp_path / ".dual-agents" / "analyze_image.py").exists()
     assert "Next steps:" in result.stdout
 
 
@@ -71,3 +73,32 @@ def test_analyze_completeness_reads_explicit_brand_set(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "TECH SPEC COMPLETENESS ANALYSIS" in result.stdout
     assert "radpower" in result.stdout
+
+
+def test_analyze_image_rejects_relative_paths(tmp_path: Path, monkeypatch) -> None:
+    image_path = tmp_path / "image.png"
+    image_path.write_text("fake")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("dual_agents.cli.shutil.which", lambda name: "/usr/bin/codex")
+    result = CliRunner().invoke(
+        app,
+        ["analyze-image", "--image-path", "image.png", "--prompt", "describe it"],
+    )
+    assert result.exit_code == 1
+    assert "absolute file path" in result.stderr
+
+
+def test_analyze_image_uses_codex_for_absolute_path(tmp_path: Path, monkeypatch) -> None:
+    image_path = tmp_path / "image.png"
+    image_path.write_text("fake")
+    monkeypatch.setattr("dual_agents.cli.shutil.which", lambda name: "/usr/bin/codex")
+    monkeypatch.setattr(
+        "dual_agents.cli.subprocess.run",
+        lambda *args, **kwargs: CompletedProcess(args=args[0], returncode=0, stdout="image ok\n", stderr=""),
+    )
+    result = CliRunner().invoke(
+        app,
+        ["analyze-image", "--image-path", str(image_path.resolve()), "--prompt", "describe it"],
+    )
+    assert result.exit_code == 0
+    assert "image ok" in result.stdout

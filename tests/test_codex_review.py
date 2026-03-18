@@ -21,6 +21,8 @@ def test_review_prompt_mentions_review_only_default() -> None:
     assert "stop signal" in prompt.lower()
     assert "ad hoc python heredoc" in prompt.lower()
     assert "inspect schema, fix parser, rerun the same bounded analysis" in prompt.lower()
+    assert "desktop/downloads" in prompt.lower()
+    assert "absolute image path and use codex image handoff" in prompt.lower()
 
 
 def test_review_command_starts_with_codex_exec() -> None:

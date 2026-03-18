@@ -49,6 +49,8 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         If a review times out, narrow the packet instead of retrying the same broad request.
         If the coordinator reports a failed task/subagent call caused by missing launcher arguments or unknown runtime schema, treat that as a workflow defect.
         In that case, require the next action to avoid speculative subagent launches and either use a known-good handoff path or mark the unit `STALLED`.
+        If the transcript shows the coordinator trying to inspect a chat image with GLM-5, searching Desktop/Downloads for screenshots, or asking for repeated image retries without a fixed image path, treat that as a workflow defect.
+        Require image handling to follow a fixed path: if the current runtime supports native image input, use it; otherwise require an absolute image path and use Codex image handoff.
         If completeness or bounded unit analysis is attempted with an ad hoc Python heredoc, alternate guessed file source, or parser that does not match the declared schema contract, treat that as a workflow defect.
         If the transcript contains a traceback, syntax error, or parser exception during completeness/unit analysis, do not allow the workflow to continue into another pilot or task.
         Require an immediate stop report and limit recovery to: inspect schema, fix parser, rerun the same bounded analysis.

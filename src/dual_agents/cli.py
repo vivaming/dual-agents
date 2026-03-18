@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -560,6 +561,52 @@ if __name__ == "__main__":
 """
 
 
+def build_image_analyzer_script() -> str:
+    return """#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Analyze an image through Codex using an explicit file path.")
+    parser.add_argument("--image-path", type=Path, required=True, help="Absolute path to the image file.")
+    parser.add_argument("--prompt", required=True, help="Bounded analysis question for Codex.")
+    args = parser.parse_args()
+
+    image_path = args.image_path
+    if not image_path.is_absolute():
+        print("ERROR: --image-path must be an absolute file path.", file=sys.stderr)
+        return 1
+    if not image_path.exists():
+        print(f"ERROR: image file does not exist: {image_path}", file=sys.stderr)
+        return 1
+    if shutil.which("codex") is None:
+        print("ERROR: codex is not available on PATH.", file=sys.stderr)
+        return 1
+
+    result = subprocess.run(
+        ["codex", "exec", "-i", str(image_path), args.prompt],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr or "ERROR: Codex image analysis failed.\\n")
+        return result.returncode
+
+    sys.stdout.write(result.stdout)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
+
+
 def default_workflow_config() -> WorkflowConfig:
     glm_provider = ProviderConfig(
         name="glm",
@@ -625,6 +672,7 @@ def _export_assets(output_dir: Path) -> None:
     (prompts_dir / "validate_report.py").write_text(build_report_validator_script())
     (prompts_dir / "monitor_stop.py").write_text(build_stop_monitor_script())
     (prompts_dir / "spec_completeness_analyzer.py").write_text(build_completeness_analyzer_script())
+    (prompts_dir / "analyze_image.py").write_text(build_image_analyzer_script())
 
 
 @app.callback()
@@ -692,6 +740,28 @@ def analyze_completeness(
         return
 
     typer.echo(format_text_report(results))
+
+
+@app.command("analyze-image")
+def analyze_image(
+    image_path: Path = typer.Option(..., "--image-path", exists=True, dir_okay=False, readable=True),
+    prompt: str = typer.Option(..., "--prompt"),
+) -> None:
+    if not image_path.is_absolute():
+        typer.echo("ERROR: --image-path must be an absolute file path.", err=True)
+        raise typer.Exit(code=1)
+    if shutil.which("codex") is None:
+        typer.echo("ERROR: codex is not available on PATH.", err=True)
+        raise typer.Exit(code=1)
+    result = subprocess.run(
+        ["codex", "exec", "-i", str(image_path), prompt],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        typer.echo(result.stderr or "ERROR: Codex image analysis failed.", err=True)
+        raise typer.Exit(code=result.returncode)
+    typer.echo(result.stdout.rstrip())
 
 
 @app.command("export")

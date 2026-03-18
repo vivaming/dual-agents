@@ -144,6 +144,11 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Do not invoke a generic task or subagent launcher unless the runtime schema is known and you can supply every required field.
             In particular, if the host task tool requires a `subagent_type` or equivalent routing field and you do not have that value explicitly, do not attempt the call.
             If subagent launch is unavailable or schema-uncertain, either do the bounded work directly in the current session or classify the unit as `STALLED` with the missing runtime requirement.
+            For image-based requests, first check whether the current runtime supports native image input.
+            If the current model is GLM-5, or the runtime reports that it cannot read images, do not try to inspect the image directly and do not search Desktop or Downloads for screenshots.
+            Require a host-provided or user-provided absolute image path and use `python .dual-agents/analyze_image.py --image-path /absolute/path/to/image.png --prompt "<bounded question>"`.
+            If the current runtime truly supports native image reading, use that capability directly instead of Codex image handoff.
+            If neither native image input nor an absolute image path is available, classify the unit as `STALLED` instead of improvising.
             Production publish, deploy changes, and external system reconfiguration are high-risk actions and require explicit review before execution.
             When the target repo is dirty, require isolated delivery work in a worktree.
             If git state, workflow state, and run logs disagree, stop and classify the unit as `STALLED` or `CHANGES_REQUIRED`.
@@ -173,6 +178,9 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Refuse chained requests that combine edit, build, publish, deploy, or external-system changes into one handoff.
             Do not write ad hoc Python heredocs for spec completeness or bounded unit analysis; use the fixed analyzer and parser path only.
             If an analysis step throws a traceback or syntax error, stop immediately with `STALLED` and tell the coordinator to inspect schema, fix parser, and rerun the same bounded analysis.
+            If the current model is GLM-5 or the runtime cannot read images, do not attempt direct image inspection.
+            Use `python .dual-agents/analyze_image.py --image-path /absolute/path/to/image.png --prompt "<bounded question>"` only when an absolute image path is available.
+            If native image input is supported in the current runtime, use that capability directly instead of Codex handoff.
             If the session is degraded by repeated malformed tool calls or timeouts, stop and point the coordinator to a stop report instead of improvising more retries.
             """
         ).strip()
