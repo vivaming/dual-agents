@@ -30,14 +30,18 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "schema is known" in agents["dual-coordinator.md"].lower()
     assert "monitor_stop.py" in agents["dual-coordinator.md"]
     assert "spec_completeness_analyzer.py" in agents["dual-coordinator.md"]
+    assert "endpoint_preflight.py" in agents["dual-coordinator.md"]
     assert "do not improvise a python heredoc" in agents["dual-coordinator.md"].lower()
     assert "inspect schema" in agents["dual-coordinator.md"].lower()
+    assert "identify the exact target url" in agents["dual-coordinator.md"].lower()
+    assert "preflight fails" in agents["dual-coordinator.md"].lower()
     assert "current model is glm-5" in agents["dual-coordinator.md"].lower()
     assert "analyze_image.py" in agents["dual-coordinator.md"]
     assert "stop signal:" in agents["dual-coordinator.md"].lower()
     assert "return `stalled`" in agents["glm-builder.md"].lower()
     assert "do not write ad hoc python heredocs" in agents["glm-builder.md"].lower()
     assert "codex handoff" in agents["glm-builder.md"].lower()
+    assert "do not proceed until `python .dual-agents/endpoint_preflight.py --url <target-url>` succeeds".lower() in agents["glm-builder.md"].lower()
 
 
 def test_build_opencode_config_targets_zai_provider() -> None:

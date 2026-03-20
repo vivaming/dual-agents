@@ -12,6 +12,12 @@ def test_classify_stop_tool_schema_error() -> None:
     assert signal.category == StopCategory.TOOL_SCHEMA_ERROR
 
 
+def test_classify_stop_target_endpoint_error() -> None:
+    signal = classify_stop("Error: Was there a typo in the url or port?")
+    assert signal.category == StopCategory.TARGET_ENDPOINT_ERROR
+    assert "endpoint preflight" in signal.recovery.lower()
+
+
 def test_classify_stop_analysis_syntax_error_uses_schema_recovery() -> None:
     signal = classify_stop("SyntaxError: invalid syntax")
     assert signal.category == StopCategory.DATA_SHAPE_MISMATCH

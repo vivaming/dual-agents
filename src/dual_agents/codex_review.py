@@ -51,6 +51,9 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         In that case, require the next action to avoid speculative subagent launches and either use a known-good handoff path or mark the unit `STALLED`.
         If the transcript shows the coordinator trying to inspect a chat image with GLM-5, searching Desktop/Downloads for screenshots, or asking for repeated image retries without a fixed image path, treat that as a workflow defect.
         Require image handling to follow a fixed path: if the current runtime supports native image input, use it; otherwise require an absolute image path and use Codex image handoff.
+        If browser or URL validation is attempted without first proving the target endpoint is reachable, treat that as a workflow defect.
+        Require a fixed preflight step: `python .dual-agents/endpoint_preflight.py --url <target-url>`.
+        If the transcript contains URL/port errors, connection refused, or endpoint-not-found behavior, require an immediate stop report and limit recovery to: identify target URL and port, verify reachability with endpoint preflight, rerun the same bounded validation.
         If completeness or bounded unit analysis is attempted with an ad hoc Python heredoc, alternate guessed file source, or parser that does not match the declared schema contract, treat that as a workflow defect.
         If the transcript contains a traceback, syntax error, or parser exception during completeness/unit analysis, do not allow the workflow to continue into another pilot or task.
         Require an immediate stop report and limit recovery to: inspect schema, fix parser, rerun the same bounded analysis.

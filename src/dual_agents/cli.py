@@ -168,6 +168,7 @@ from pathlib import Path
 class StopCategory(str, Enum):
     STREAM_TIMEOUT = "STREAM_TIMEOUT"
     TOOL_SCHEMA_ERROR = "TOOL_SCHEMA_ERROR"
+    TARGET_ENDPOINT_ERROR = "TARGET_ENDPOINT_ERROR"
     OUTPUT_CORRUPTION = "OUTPUT_CORRUPTION"
     DATA_SHAPE_MISMATCH = "DATA_SHAPE_MISMATCH"
     CAPABILITY_MISMATCH = "CAPABILITY_MISMATCH"
@@ -194,6 +195,14 @@ STOP_PATTERN_MAP = {
         re.compile(r"expected string, received undefined", re.IGNORECASE),
         re.compile(r"subagent_type", re.IGNORECASE),
         re.compile(r"unknown runtime schema", re.IGNORECASE),
+    ),
+    StopCategory.TARGET_ENDPOINT_ERROR: (
+        re.compile(r"was there a typo in the url or port\\?", re.IGNORECASE),
+        re.compile(r"err_connection_refused", re.IGNORECASE),
+        re.compile(r"err_name_not_resolved", re.IGNORECASE),
+        re.compile(r"failed to connect", re.IGNORECASE),
+        re.compile(r"connection refused", re.IGNORECASE),
+        re.compile(r"localhost:\\d+.*(?:unreachable|refused)", re.IGNORECASE),
     ),
     StopCategory.OUTPUT_CORRUPTION: (
         re.compile(r"^\\s*Thinking:", re.IGNORECASE | re.MULTILINE),
@@ -235,6 +244,10 @@ def _recovery_for(category: StopCategory):
         StopCategory.TOOL_SCHEMA_ERROR: (
             "Stop speculative subagent/tool retries, record the missing runtime field, and either use a known-good path or restart fresh.",
             True,
+        ),
+        StopCategory.TARGET_ENDPOINT_ERROR: (
+            "Identify the target URL and port, verify reachability with endpoint preflight, and rerun the same bounded validation.",
+            False,
         ),
         StopCategory.OUTPUT_CORRUPTION: (
             "Discard the malformed output, save a concise stop report, and continue in a fresh session with a bounded next action.",
@@ -319,6 +332,103 @@ def main() -> int:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print(format_stop_report(signal, args.unit_name))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
+
+
+def build_endpoint_preflight_script() -> str:
+    return """#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import socket
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+
+def _socket_preflight(host: str, port: int, timeout: float) -> tuple[bool, str]:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True, "socket reachable"
+    except OSError as exc:
+        return False, str(exc)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Preflight a browser/URL target before broad remediation.")
+    parser.add_argument("--url", required=True, help="Target URL to validate.")
+    parser.add_argument("--timeout", type=float, default=5.0, help="Timeout in seconds.")
+    parser.add_argument("--json", action="store_true", help="Emit JSON output.")
+    args = parser.parse_args()
+
+    parsed = urllib.parse.urlparse(args.url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        message = "URL must be absolute and use http or https."
+        if args.json:
+            print(json.dumps({"ok": False, "error": message}, indent=2))
+        else:
+            print(f"ERROR: {message}", file=sys.stderr)
+        return 1
+
+    host = parsed.hostname or ""
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    socket_ok = True
+    socket_detail = "not checked"
+    if host in {"localhost", "127.0.0.1"}:
+        socket_ok, socket_detail = _socket_preflight(host, port, args.timeout)
+        if not socket_ok:
+            payload = {
+                "ok": False,
+                "url": args.url,
+                "host": host,
+                "port": port,
+                "error": f"Local endpoint unreachable: {socket_detail}",
+            }
+            if args.json:
+                print(json.dumps(payload, indent=2))
+            else:
+                print(f"ERROR: Local endpoint unreachable on {host}:{port}: {socket_detail}", file=sys.stderr)
+            return 1
+
+    request = urllib.request.Request(args.url, method="HEAD")
+    try:
+        with urllib.request.urlopen(request, timeout=args.timeout) as response:
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+    except Exception as exc:  # noqa: BLE001
+        payload = {
+            "ok": False,
+            "url": args.url,
+            "host": host,
+            "port": port,
+            "error": str(exc),
+        }
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            print(f"ERROR: Endpoint preflight failed for {args.url}: {exc}", file=sys.stderr)
+        return 1
+
+    payload = {
+        "ok": True,
+        "url": args.url,
+        "host": host,
+        "port": port,
+        "status": status,
+        "socket_detail": socket_detail,
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(f"OK: {args.url} reachable (status {status})")
     return 0
 
 
@@ -673,6 +783,7 @@ def _export_assets(output_dir: Path) -> None:
     (prompts_dir / "monitor_stop.py").write_text(build_stop_monitor_script())
     (prompts_dir / "spec_completeness_analyzer.py").write_text(build_completeness_analyzer_script())
     (prompts_dir / "analyze_image.py").write_text(build_image_analyzer_script())
+    (prompts_dir / "endpoint_preflight.py").write_text(build_endpoint_preflight_script())
 
 
 @app.callback()
@@ -762,6 +873,63 @@ def analyze_image(
         typer.echo(result.stderr or "ERROR: Codex image analysis failed.", err=True)
         raise typer.Exit(code=result.returncode)
     typer.echo(result.stdout.rstrip())
+
+
+@app.command("preflight-endpoint")
+def preflight_endpoint(
+    url: str = typer.Option(..., "--url"),
+    timeout: float = typer.Option(5.0, "--timeout"),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+    from urllib import error, parse, request
+    import socket
+
+    parsed = parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        typer.echo("ERROR: URL must be absolute and use http or https.", err=True)
+        raise typer.Exit(code=1)
+
+    host = parsed.hostname or ""
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    socket_detail = "not checked"
+    if host in {"localhost", "127.0.0.1"}:
+        try:
+            with socket.create_connection((host, port), timeout=timeout):
+                socket_detail = "socket reachable"
+        except OSError as exc:
+            message = f"Local endpoint unreachable on {host}:{port}: {exc}"
+            if json_output:
+                typer.echo(json.dumps({"ok": False, "url": url, "host": host, "port": port, "error": message}, indent=2))
+            else:
+                typer.echo(f"ERROR: {message}", err=True)
+            raise typer.Exit(code=1)
+
+    req = request.Request(url, method="HEAD")
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            status = response.status
+    except error.HTTPError as exc:
+        status = exc.code
+    except Exception as exc:  # noqa: BLE001
+        message = f"Endpoint preflight failed for {url}: {exc}"
+        if json_output:
+            typer.echo(json.dumps({"ok": False, "url": url, "host": host, "port": port, "error": message}, indent=2))
+        else:
+            typer.echo(f"ERROR: {message}", err=True)
+        raise typer.Exit(code=1)
+
+    payload = {
+        "ok": True,
+        "url": url,
+        "host": host,
+        "port": port,
+        "status": status,
+        "socket_detail": socket_detail,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2))
+    else:
+        typer.echo(f"OK: {url} reachable (status {status})")
 
 
 @app.command("export")

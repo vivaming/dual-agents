@@ -1,4 +1,6 @@
 import os
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from subprocess import CompletedProcess
 
@@ -30,6 +32,7 @@ def test_init_target_exports_assets_and_prints_next_steps(tmp_path: Path, monkey
     assert (tmp_path / ".dual-agents" / "validate_report.py").exists()
     assert (tmp_path / ".dual-agents" / "monitor_stop.py").exists()
     assert (tmp_path / ".dual-agents" / "analyze_image.py").exists()
+    assert (tmp_path / ".dual-agents" / "endpoint_preflight.py").exists()
     assert "Next steps:" in result.stdout
 
 
@@ -102,3 +105,33 @@ def test_analyze_image_uses_codex_for_absolute_path(tmp_path: Path, monkeypatch)
     )
     assert result.exit_code == 0
     assert "image ok" in result.stdout
+
+
+class _HeadOkHandler(BaseHTTPRequestHandler):
+    def do_HEAD(self) -> None:  # noqa: N802
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A003
+        return
+
+
+def test_preflight_endpoint_succeeds_for_reachable_local_server() -> None:
+    server = HTTPServer(("127.0.0.1", 0), _HeadOkHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        url = f"http://127.0.0.1:{server.server_port}/health"
+        result = CliRunner().invoke(app, ["preflight-endpoint", "--url", url])
+        assert result.exit_code == 0
+        assert "reachable" in result.stdout
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=1)
+
+
+def test_preflight_endpoint_fails_for_bad_url() -> None:
+    result = CliRunner().invoke(app, ["preflight-endpoint", "--url", "not-a-url"])
+    assert result.exit_code == 1
+    assert "absolute and use http or https" in result.stderr

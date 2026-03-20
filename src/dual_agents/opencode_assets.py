@@ -144,6 +144,13 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Do not invoke a generic task or subagent launcher unless the runtime schema is known and you can supply every required field.
             In particular, if the host task tool requires a `subagent_type` or equivalent routing field and you do not have that value explicitly, do not attempt the call.
             If subagent launch is unavailable or schema-uncertain, either do the bounded work directly in the current session or classify the unit as `STALLED` with the missing runtime requirement.
+            For any browser, URL, SEO-live-check, or page-validation task, identify the exact target URL before starting implementation work and run `python .dual-agents/endpoint_preflight.py --url <target-url>` first.
+            If endpoint preflight fails, stop immediately, produce a stop report, and do not launch a broad remediation task.
+            Recovery after endpoint preflight failure is limited to:
+            1. identify target URL and port
+            2. verify reachability with endpoint preflight
+            3. rerun the same bounded validation
+            Do not turn a failed endpoint check into a large "re-apply all changes" builder task.
             For image-based requests, first check whether the current runtime supports native image input.
             If the current model is GLM-5, or the runtime reports that it cannot read images, do not try to inspect the image directly and do not search Desktop or Downloads for screenshots.
             Require a host-provided or user-provided absolute image path and use `python .dual-agents/analyze_image.py --image-path /absolute/path/to/image.png --prompt "<bounded question>"`.
@@ -178,6 +185,8 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Refuse chained requests that combine edit, build, publish, deploy, or external-system changes into one handoff.
             Do not write ad hoc Python heredocs for spec completeness or bounded unit analysis; use the fixed analyzer and parser path only.
             If an analysis step throws a traceback or syntax error, stop immediately with `STALLED` and tell the coordinator to inspect schema, fix parser, and rerun the same bounded analysis.
+            For browser or URL validation tasks, do not proceed until `python .dual-agents/endpoint_preflight.py --url <target-url>` succeeds.
+            If endpoint preflight fails, return `STALLED` and tell the coordinator to identify the target URL and port, verify reachability, and rerun the same bounded validation.
             If the current model is GLM-5 or the runtime cannot read images, do not attempt direct image inspection.
             Use `python .dual-agents/analyze_image.py --image-path /absolute/path/to/image.png --prompt "<bounded question>"` only when an absolute image path is available.
             If native image input is supported in the current runtime, use that capability directly instead of Codex handoff.

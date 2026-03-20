@@ -8,6 +8,7 @@ from enum import Enum
 class StopCategory(str, Enum):
     STREAM_TIMEOUT = "STREAM_TIMEOUT"
     TOOL_SCHEMA_ERROR = "TOOL_SCHEMA_ERROR"
+    TARGET_ENDPOINT_ERROR = "TARGET_ENDPOINT_ERROR"
     OUTPUT_CORRUPTION = "OUTPUT_CORRUPTION"
     DATA_SHAPE_MISMATCH = "DATA_SHAPE_MISMATCH"
     CAPABILITY_MISMATCH = "CAPABILITY_MISMATCH"
@@ -34,6 +35,14 @@ STOP_PATTERN_MAP: dict[StopCategory, tuple[re.Pattern[str], ...]] = {
         re.compile(r"expected string, received undefined", re.IGNORECASE),
         re.compile(r"subagent_type", re.IGNORECASE),
         re.compile(r"unknown runtime schema", re.IGNORECASE),
+    ),
+    StopCategory.TARGET_ENDPOINT_ERROR: (
+        re.compile(r"was there a typo in the url or port\?", re.IGNORECASE),
+        re.compile(r"err_connection_refused", re.IGNORECASE),
+        re.compile(r"err_name_not_resolved", re.IGNORECASE),
+        re.compile(r"failed to connect", re.IGNORECASE),
+        re.compile(r"connection refused", re.IGNORECASE),
+        re.compile(r"localhost:\d+.*(?:unreachable|refused)", re.IGNORECASE),
     ),
     StopCategory.OUTPUT_CORRUPTION: (
         re.compile(r"^\s*Thinking:", re.IGNORECASE | re.MULTILINE),
@@ -76,6 +85,10 @@ def _recovery_for(category: StopCategory) -> tuple[str, bool]:
         StopCategory.TOOL_SCHEMA_ERROR: (
             "Stop speculative subagent/tool retries, record the missing runtime field, and either use a known-good path or restart fresh.",
             True,
+        ),
+        StopCategory.TARGET_ENDPOINT_ERROR: (
+            "Identify the target URL and port, verify reachability with endpoint preflight, and rerun the same bounded validation.",
+            False,
         ),
         StopCategory.OUTPUT_CORRUPTION: (
             "Discard the malformed output, save a concise stop report, and continue in a fresh session with a bounded next action.",

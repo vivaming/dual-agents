@@ -12,6 +12,10 @@ SCENARIOS: tuple[tuple[str, StopCategory], ...] = (
         StopCategory.TOOL_SCHEMA_ERROR,
     ),
     (
+        "Error: Was there a typo in the url or port?",
+        StopCategory.TARGET_ENDPOINT_ERROR,
+    ),
+    (
         "Thinking: let me gather the data\n<parameter name=\"x\">\nzsh:1: unmatched \"",
         StopCategory.OUTPUT_CORRUPTION,
     ),
