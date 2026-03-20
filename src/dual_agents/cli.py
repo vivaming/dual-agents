@@ -166,6 +166,7 @@ from pathlib import Path
 
 
 class StopCategory(str, Enum):
+    DIRTY_REPO_STAGE_OVERLOAD = "DIRTY_REPO_STAGE_OVERLOAD"
     STREAM_TIMEOUT = "STREAM_TIMEOUT"
     TOOL_SCHEMA_ERROR = "TOOL_SCHEMA_ERROR"
     TARGET_ENDPOINT_ERROR = "TARGET_ENDPOINT_ERROR"
@@ -261,6 +262,10 @@ def _recovery_for(category: StopCategory):
             "Use a capability that the current runtime actually supports, or switch to a manual or alternate path without looping.",
             False,
         ),
+        StopCategory.DIRTY_REPO_STAGE_OVERLOAD: (
+            "Inspect git status, isolate the unit in a worktree or narrow to an explicit file list, and rerun the same bounded staging step.",
+            False,
+        ),
         StopCategory.SESSION_DEGRADATION: (
             "Stop the current session, save a stop report with evidence, and resume from a fresh session with one bounded next step.",
             True,
@@ -278,6 +283,31 @@ def classify_stop(raw_text: str) -> StopSignal:
     if not text:
         recovery, fresh = _recovery_for(StopCategory.UNKNOWN)
         return StopSignal(StopCategory.UNKNOWN, (), recovery, fresh, ())
+
+    if (
+        "SSE read timed out" in text
+        and "git status --short" in text
+        and ("git add " in text or "data/intro_cache/" in text)
+    ):
+        recovery, fresh = _recovery_for(StopCategory.DIRTY_REPO_STAGE_OVERLOAD)
+        evidence = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip()
+            and (
+                "git status --short" in line
+                or "git add " in line
+                or "SSE read timed out" in line
+                or "data/intro_cache/" in line
+            )
+        ]
+        return StopSignal(
+            StopCategory.DIRTY_REPO_STAGE_OVERLOAD,
+            tuple(dict.fromkeys(evidence)),
+            recovery,
+            fresh,
+            (StopCategory.DIRTY_REPO_STAGE_OVERLOAD,),
+        )
 
     matched = []
     evidence = []
@@ -663,6 +693,7 @@ def main() -> int:
         )
     else:
         print(format_text_report(results))
+
     return 0
 
 
@@ -709,6 +740,118 @@ def main() -> int:
         return result.returncode
 
     sys.stdout.write(result.stdout)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
+
+
+def build_stage_preflight_script() -> str:
+    return """#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+
+def _git_status(repo_root: Path) -> list[str]:
+    result = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def _requested_candidates(repo_root: Path, dirty_lines: list[str], paths: list[str]) -> tuple[list[str], list[str]]:
+    explicit_paths: list[str] = []
+    directory_paths: list[str] = []
+    for raw_path in paths:
+        candidate = Path(raw_path)
+        if any(ch in raw_path for ch in "*?[]"):
+            raise ValueError(f"Path '{raw_path}' contains a wildcard; use explicit file paths only.")
+        if raw_path in {".", "-A", "--all"}:
+            raise ValueError(f"Path '{raw_path}' is too broad for staging preflight.")
+        repo_path = (repo_root / candidate).resolve()
+        try:
+            repo_path.relative_to(repo_root.resolve())
+        except ValueError as exc:
+            raise ValueError(f"Path '{raw_path}' is outside the repository root.") from exc
+        if repo_path.is_dir() or raw_path.endswith("/"):
+            directory_paths.append(raw_path.rstrip("/"))
+        else:
+            explicit_paths.append(raw_path)
+
+    matched: list[str] = []
+    for line in dirty_lines:
+        path_text = line[3:]
+        if " -> " in path_text:
+            path_text = path_text.split(" -> ", 1)[1]
+        for explicit in explicit_paths:
+            if path_text == explicit:
+                matched.append(path_text)
+                break
+        else:
+            for directory in directory_paths:
+                prefix = directory + "/"
+                if path_text == directory or path_text.startswith(prefix):
+                    matched.append(path_text)
+                    break
+    return matched, directory_paths
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Preflight a git staging plan for dual-agent workflow.")
+    parser.add_argument("--repo-root", type=Path, default=Path.cwd(), help="Repository root.")
+    parser.add_argument("--path", action="append", dest="paths", required=True, help="Explicit file path to stage.")
+    parser.add_argument("--max-files", type=int, default=25, help="Maximum changed files allowed in one bounded stage.")
+    args = parser.parse_args()
+
+    repo_root = args.repo_root.resolve()
+    dirty_lines = _git_status(repo_root)
+    if not dirty_lines:
+        print("OK: repository is clean; staging plan is bounded.")
+        return 0
+
+    try:
+        matched, directory_paths = _requested_candidates(repo_root, dirty_lines, args.paths)
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    if directory_paths:
+        print(
+            "ERROR: directory-wide staging is not allowed in a dirty repo; use explicit file paths only.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not matched:
+        print("ERROR: none of the requested paths match current dirty files.", file=sys.stderr)
+        return 1
+
+    unrelated_count = len(dirty_lines) - len(set(matched))
+    if unrelated_count > 0:
+        print(
+            "ERROR: repository contains unrelated dirty files; isolate the unit in a worktree or use a narrower explicit file list.",
+            file=sys.stderr,
+        )
+        return 1
+
+    if len(set(matched)) > args.max_files:
+        print(
+            f"ERROR: staging plan touches {len(set(matched))} files; limit is {args.max_files}. Split the unit first.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"OK: bounded staging plan covers {len(set(matched))} explicit dirty files.")
     return 0
 
 
@@ -784,6 +927,7 @@ def _export_assets(output_dir: Path) -> None:
     (prompts_dir / "spec_completeness_analyzer.py").write_text(build_completeness_analyzer_script())
     (prompts_dir / "analyze_image.py").write_text(build_image_analyzer_script())
     (prompts_dir / "endpoint_preflight.py").write_text(build_endpoint_preflight_script())
+    (prompts_dir / "preflight_stage.py").write_text(build_stage_preflight_script())
 
 
 @app.callback()
@@ -983,6 +1127,22 @@ def init_target(
     typer.echo("1. Start a fresh OpenCode session in the target repo.")
     typer.echo("2. Commit .opencode/ and .dual-agents/ in the target repo.")
     typer.echo("3. Use `/dual` or the configured trigger phrase in that repo.")
+
+
+@app.command("preflight-stage")
+def preflight_stage(
+    path: list[str] = typer.Option(..., "--path", help="Explicit file path to stage."),
+    repo_root: Path = typer.Option(Path.cwd(), exists=True, file_okay=False, dir_okay=True),
+    max_files: int = typer.Option(25, min=1),
+) -> None:
+    script_path = Path.cwd() / ".dual-agents" / "preflight_stage.py"
+    if not script_path.exists():
+        typer.echo("preflight_stage.py is not present in the current repo. Run init-target/export first.", err=True)
+        raise typer.Exit(code=1)
+    os.execv(
+        sys.executable,
+        [sys.executable, str(script_path), "--repo-root", str(repo_root), "--max-files", str(max_files), *sum([["--path", item] for item in path], [])],
+    )
 
 
 def main() -> None:

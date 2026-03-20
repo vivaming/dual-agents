@@ -16,12 +16,14 @@ from dual_agents.controller import (
     validate_forum_ruling,
     contains_internal_leak,
     build_remediation_issue_cluster,
+    contains_unsafe_stage_command,
     is_bounded_builder_task,
     parse_builder_result,
     parse_review_result,
     requires_critical_review,
     validate_analysis_recovery_step,
     validate_post_review_adjudication,
+    validate_staging_scope,
     validate_user_facing_report,
 )
 from dual_agents.workflow import WorkflowStage
@@ -159,6 +161,29 @@ def test_controller_marks_builder_stalled_and_requires_recovery() -> None:
 
 def test_bounded_builder_task_rejects_chained_request_text() -> None:
     assert is_bounded_builder_task("Create HTML and publish to prod then reconfigure GSC") is False
+
+
+def test_contains_unsafe_stage_command_flags_broad_git_add() -> None:
+    assert contains_unsafe_stage_command("git add -A") is True
+    assert contains_unsafe_stage_command("git add c/*/index.html") is True
+    assert contains_unsafe_stage_command("git add index.html scripts/update_sitemap.py") is False
+
+
+def test_validate_staging_scope_rejects_unrelated_dirty_repo() -> None:
+    with pytest.raises(WorkflowViolation):
+        validate_staging_scope(
+            repo_dirty_file_count=40,
+            requested_file_count=3,
+            has_unrelated_dirty_files=True,
+        )
+
+
+def test_validate_staging_scope_accepts_small_explicit_file_set() -> None:
+    validate_staging_scope(
+        repo_dirty_file_count=3,
+        requested_file_count=3,
+        has_unrelated_dirty_files=False,
+    )
 
 
 def test_builder_handoff_requires_exactly_one_task_type() -> None:

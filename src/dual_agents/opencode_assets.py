@@ -33,6 +33,9 @@ def build_command_markdown(config: WorkflowConfig) -> str:
         Before saying something is pushed, remotely available, deployed, or notified, verify delivery with:
         {verification_steps}
         If the repo is dirty or ahead with unrelated work, isolate delivery work in a worktree before pushing.
+        Before any `git add` or commit in a dirty repo, run `python .dual-agents/preflight_stage.py --path <explicit-file> ...`.
+        Never use `git add -A`, `git add .`, wildcard pathspecs, or directory-wide staging in a dirty repo.
+        If staging preflight fails or a run shows `SSE read timed out` around staging/commit, stop and classify the unit as `STALLED` instead of retrying broad git commands.
         If evidence conflicts, downgrade the unit to `STALLED` or `CHANGES_REQUIRED` instead of reporting completion.
         {forum_rules.rstrip()}
         """
@@ -158,6 +161,14 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             If neither native image input nor an absolute image path is available, classify the unit as `STALLED` instead of improvising.
             Production publish, deploy changes, and external system reconfiguration are high-risk actions and require explicit review before execution.
             When the target repo is dirty, require isolated delivery work in a worktree.
+            Before any staging or commit step in a dirty repo, run `python .dual-agents/preflight_stage.py --path <explicit-file> ...`.
+            If staging preflight fails, stop immediately and report `STALLED`.
+            Do not use `git add -A`, `git add .`, wildcard pathspecs, or directory-wide staging in a dirty repo.
+            If a staging/commit step ends in `SSE read timed out`, do not retry broader git commands.
+            Recovery is limited to:
+            1. Inspect `git status --short` and identify the exact files owned by the current unit.
+            2. Isolate the unit in a worktree or narrow the explicit file list.
+            3. Rerun the same bounded staging/commit step.
             If git state, workflow state, and run logs disagree, stop and classify the unit as `STALLED` or `CHANGES_REQUIRED`.
             {forum_adjudication_rules}
             """
@@ -191,6 +202,8 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Use `python .dual-agents/analyze_image.py --image-path /absolute/path/to/image.png --prompt "<bounded question>"` only when an absolute image path is available.
             If native image input is supported in the current runtime, use that capability directly instead of Codex handoff.
             If the session is degraded by repeated malformed tool calls or timeouts, stop and point the coordinator to a stop report instead of improvising more retries.
+            In a dirty repo, never stage with `git add -A`, `git add .`, wildcard pathspecs, or directory-wide paths.
+            Run `python .dual-agents/preflight_stage.py --path <explicit-file> ...` before staging; if it fails, return `STALLED`.
             """
         ).strip()
         + "\n",

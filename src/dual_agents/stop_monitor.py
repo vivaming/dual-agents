@@ -6,6 +6,7 @@ from enum import Enum
 
 
 class StopCategory(str, Enum):
+    DIRTY_REPO_STAGE_OVERLOAD = "DIRTY_REPO_STAGE_OVERLOAD"
     STREAM_TIMEOUT = "STREAM_TIMEOUT"
     TOOL_SCHEMA_ERROR = "TOOL_SCHEMA_ERROR"
     TARGET_ENDPOINT_ERROR = "TARGET_ENDPOINT_ERROR"
@@ -78,6 +79,10 @@ def _extract_evidence(text: str, patterns: tuple[re.Pattern[str], ...]) -> tuple
 
 def _recovery_for(category: StopCategory) -> tuple[str, bool]:
     recovery_map = {
+        StopCategory.DIRTY_REPO_STAGE_OVERLOAD: (
+            "Inspect git status, isolate the unit in a worktree or narrow to an explicit file list, and rerun the same bounded staging step.",
+            False,
+        ),
         StopCategory.STREAM_TIMEOUT: (
             "Save a bounded checkpoint, restart in a fresh session, and retry only the smallest unresolved unit.",
             True,
@@ -124,6 +129,31 @@ def classify_stop(raw_text: str) -> StopSignal:
             recovery=recovery,
             requires_fresh_session=fresh,
             matched_categories=(),
+        )
+
+    if (
+        "SSE read timed out" in text
+        and "git status --short" in text
+        and ("git add " in text or "data/intro_cache/" in text)
+    ):
+        recovery, fresh = _recovery_for(StopCategory.DIRTY_REPO_STAGE_OVERLOAD)
+        evidence = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip()
+            and (
+                "git status --short" in line
+                or "git add " in line
+                or "SSE read timed out" in line
+                or "data/intro_cache/" in line
+            )
+        ]
+        return StopSignal(
+            category=StopCategory.DIRTY_REPO_STAGE_OVERLOAD,
+            evidence=tuple(dict.fromkeys(evidence)),
+            recovery=recovery,
+            requires_fresh_session=fresh,
+            matched_categories=(StopCategory.DIRTY_REPO_STAGE_OVERLOAD,),
         )
 
     matched: list[StopCategory] = []

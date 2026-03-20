@@ -124,6 +124,13 @@ ANALYSIS_RECOVERY_STEPS = (
     "rerun same bounded analysis",
 )
 
+UNSAFE_STAGE_PATTERNS = (
+    re.compile(r"\bgit\s+add\s+-A\b", re.IGNORECASE),
+    re.compile(r"\bgit\s+add\s+--all\b", re.IGNORECASE),
+    re.compile(r"\bgit\s+add\s+\.\b", re.IGNORECASE),
+    re.compile(r"\bgit\s+add\b.*[*?\[]", re.IGNORECASE),
+)
+
 
 def _normalize_issues(raw_value: str, continuation_lines: list[str]) -> tuple[str, ...]:
     candidates: list[str] = []
@@ -296,6 +303,28 @@ def build_remediation_issue_cluster(issues: tuple[str, ...], *, max_items: int =
     if not cleaned:
         raise WorkflowViolation("Cannot build a remediation cluster from an empty issue list.")
     return cleaned[:max_items]
+
+
+def contains_unsafe_stage_command(raw_command: str) -> bool:
+    return any(pattern.search(raw_command) for pattern in UNSAFE_STAGE_PATTERNS)
+
+
+def validate_staging_scope(
+    *,
+    repo_dirty_file_count: int,
+    requested_file_count: int,
+    contains_directory_path: bool = False,
+    has_unrelated_dirty_files: bool = False,
+    max_files: int = 25,
+) -> None:
+    if requested_file_count < 1:
+        raise WorkflowViolation("Staging plan must name at least one explicit file.")
+    if contains_directory_path:
+        raise WorkflowViolation("Directory-wide staging is not allowed for a dirty repo; use explicit files.")
+    if repo_dirty_file_count > 0 and has_unrelated_dirty_files:
+        raise WorkflowViolation("Dirty repo contains unrelated changes; isolate the unit in a worktree before staging.")
+    if requested_file_count > max_files:
+        raise WorkflowViolation(f"Staging plan touches {requested_file_count} files; limit is {max_files}.")
 
 
 def validate_post_review_adjudication(raw_output: str, *, max_issue_count: int = 3) -> str:

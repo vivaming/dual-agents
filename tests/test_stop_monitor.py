@@ -1,6 +1,18 @@
 from dual_agents.stop_monitor import StopCategory, classify_stop, format_stop_report
 
 
+def test_classify_stop_dirty_repo_stage_overload() -> None:
+    signal = classify_stop(
+        "$ git status --short\n"
+        " M index.html\n"
+        "?? data/intro_cache/foo.txt\n"
+        "$ git add index.html data/intro_cache/\n"
+        "Error: SSE read timed out\n"
+    )
+    assert signal.category == StopCategory.DIRTY_REPO_STAGE_OVERLOAD
+    assert "worktree" in signal.recovery.lower()
+
+
 def test_classify_stop_timeout() -> None:
     signal = classify_stop("Error: SSE read timed out")
     assert signal.category == StopCategory.STREAM_TIMEOUT

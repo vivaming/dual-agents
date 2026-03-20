@@ -25,6 +25,9 @@ def test_review_prompt_mentions_review_only_default() -> None:
     assert "absolute image path and use codex image handoff" in prompt.lower()
     assert "endpoint_preflight.py" in prompt
     assert "url/port errors" in prompt.lower()
+    assert "preflight_stage.py" in prompt
+    assert "git add -a" in prompt.lower()
+    assert "sse read timed out" in prompt.lower()
 
 
 def test_review_command_starts_with_codex_exec() -> None:

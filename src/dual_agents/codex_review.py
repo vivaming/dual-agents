@@ -59,6 +59,12 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         Require an immediate stop report and limit recovery to: inspect schema, fix parser, rerun the same bounded analysis.
         If the transcript shows a workflow pause or stop, require a bounded stop report with: current unit, stop signal, matched categories, evidence, and one recovery step.
         Prefer classifying the stop cause over another speculative retry loop.
+        If the workflow stages or commits changes from a dirty repo without first running `python .dual-agents/preflight_stage.py --path <explicit-file> ...`, treat that as a workflow defect.
+        Reject any use of `git add -A`, `git add .`, wildcard pathspecs, or directory-wide staging in a dirty repo.
+        If a staging or commit step ends in `SSE read timed out`, require recovery to:
+        1. inspect `git status --short`,
+        2. isolate the unit in a worktree or narrow the explicit file list,
+        3. rerun the same bounded staging step.
         Check remote-delivery proof using evidence equivalent to:
         {verification_steps}
         Return only:

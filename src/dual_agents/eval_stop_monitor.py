@@ -6,6 +6,14 @@ from dual_agents.stop_monitor import StopCategory, classify_stop
 
 
 SCENARIOS: tuple[tuple[str, StopCategory], ...] = (
+    (
+        "$ git status --short\n"
+        " M index.html\n"
+        "?? data/intro_cache/foo.txt\n"
+        "$ git add index.html data/intro_cache/\n"
+        "Error: SSE read timed out",
+        StopCategory.DIRTY_REPO_STAGE_OVERLOAD,
+    ),
     ("Error: SSE read timed out", StopCategory.STREAM_TIMEOUT),
     (
         "Error: The task tool was called with invalid arguments: expected string, received undefined path subagent_type",

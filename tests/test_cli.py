@@ -33,6 +33,7 @@ def test_init_target_exports_assets_and_prints_next_steps(tmp_path: Path, monkey
     assert (tmp_path / ".dual-agents" / "monitor_stop.py").exists()
     assert (tmp_path / ".dual-agents" / "analyze_image.py").exists()
     assert (tmp_path / ".dual-agents" / "endpoint_preflight.py").exists()
+    assert (tmp_path / ".dual-agents" / "preflight_stage.py").exists()
     assert "Next steps:" in result.stdout
 
 
