@@ -61,6 +61,8 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         Prefer classifying the stop cause over another speculative retry loop.
         If the workflow stages or commits changes from a dirty repo without first running `python .dual-agents/preflight_stage.py --path <explicit-file> ...`, treat that as a workflow defect.
         If staging preflight fails and the workflow still attempts `git add` or `git commit` in the same session, treat that as a blocking workflow defect.
+        If the repo has at least {config.worktree_required_dirty_file_threshold} dirty files and the workflow remains in the primary workspace instead of moving to a linked worktree, treat that as a blocking workflow defect.
+        Require `python .dual-agents/require_worktree.py --threshold {config.worktree_required_dirty_file_threshold}` before any staging, commit, or push in that situation.
         Reject any use of `git add -A`, `git add .`, wildcard pathspecs, or directory-wide staging in a dirty repo.
         If a staging or commit step ends in `SSE read timed out`, require recovery to:
         1. inspect `git status --short`,

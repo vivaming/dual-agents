@@ -327,6 +327,20 @@ def validate_staging_scope(
         raise WorkflowViolation(f"Staging plan touches {requested_file_count} files; limit is {max_files}.")
 
 
+def validate_worktree_requirement(
+    *,
+    repo_dirty_file_count: int,
+    in_linked_worktree: bool,
+    dirty_file_threshold: int = 10,
+) -> None:
+    if dirty_file_threshold < 1:
+        raise WorkflowViolation("Dirty-file threshold must be at least 1.")
+    if repo_dirty_file_count >= dirty_file_threshold and not in_linked_worktree:
+        raise WorkflowViolation(
+            "Dirty repo requires a linked worktree before staging, committing, or pushing."
+        )
+
+
 def validate_post_review_adjudication(raw_output: str, *, max_issue_count: int = 3) -> str:
     cleaned = validate_user_facing_report(raw_output)
     required_labels = (

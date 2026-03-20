@@ -6,6 +6,7 @@ from enum import Enum
 
 
 class StopCategory(str, Enum):
+    WORKTREE_REQUIRED = "WORKTREE_REQUIRED"
     PREFLIGHT_BYPASS = "PREFLIGHT_BYPASS"
     DIRTY_REPO_STAGE_OVERLOAD = "DIRTY_REPO_STAGE_OVERLOAD"
     STREAM_TIMEOUT = "STREAM_TIMEOUT"
@@ -80,6 +81,10 @@ def _extract_evidence(text: str, patterns: tuple[re.Pattern[str], ...]) -> tuple
 
 def _recovery_for(category: StopCategory) -> tuple[str, bool]:
     recovery_map = {
+        StopCategory.WORKTREE_REQUIRED: (
+            "Repo is too dirty for primary-workspace delivery. Move the bounded unit into a linked worktree and restart from the first delivery step there.",
+            True,
+        ),
         StopCategory.PREFLIGHT_BYPASS: (
             "Do not run more git staging commands in this session. Stop immediately, isolate the unit in a worktree or narrow the explicit file list, and restart from the failed preflight step.",
             True,
@@ -134,6 +139,30 @@ def classify_stop(raw_text: str) -> StopSignal:
             recovery=recovery,
             requires_fresh_session=fresh,
             matched_categories=(),
+        )
+
+    if (
+        "require_worktree.py" in text
+        and "dirty file count" in text
+        and "linked worktree" in text
+    ):
+        recovery, fresh = _recovery_for(StopCategory.WORKTREE_REQUIRED)
+        evidence = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip()
+            and (
+                "require_worktree.py" in line
+                or "dirty file count" in line
+                or "linked worktree" in line
+            )
+        ]
+        return StopSignal(
+            category=StopCategory.WORKTREE_REQUIRED,
+            evidence=tuple(dict.fromkeys(evidence)),
+            recovery=recovery,
+            requires_fresh_session=fresh,
+            matched_categories=(StopCategory.WORKTREE_REQUIRED,),
         )
 
     if (

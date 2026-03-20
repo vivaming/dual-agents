@@ -23,6 +23,15 @@ def test_classify_stop_preflight_bypass() -> None:
     assert signal.requires_fresh_session is True
 
 
+def test_classify_stop_worktree_required() -> None:
+    signal = classify_stop(
+        "$ python .dual-agents/require_worktree.py --threshold 10\n"
+        "ERROR: dirty file count 41 exceeds threshold 10; use a linked worktree before staging, committing, or pushing.\n"
+    )
+    assert signal.category == StopCategory.WORKTREE_REQUIRED
+    assert signal.requires_fresh_session is True
+
+
 def test_classify_stop_timeout() -> None:
     signal = classify_stop("Error: SSE read timed out")
     assert signal.category == StopCategory.STREAM_TIMEOUT

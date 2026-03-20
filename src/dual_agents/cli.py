@@ -889,6 +889,58 @@ if __name__ == "__main__":
 """
 
 
+def build_require_worktree_script() -> str:
+    return """#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+
+def _git_status(repo_root: Path) -> list[str]:
+    result = subprocess.run(
+        ["git", "status", "--short"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [line for line in result.stdout.splitlines() if line.strip()]
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Require a linked worktree when the repo is heavily dirty.")
+    parser.add_argument("--repo-root", type=Path, default=Path.cwd(), help="Repository root.")
+    parser.add_argument("--threshold", type=int, default=10, help="Dirty file count that requires a linked worktree.")
+    args = parser.parse_args()
+
+    repo_root = args.repo_root.resolve()
+    git_marker = repo_root / ".git"
+    in_linked_worktree = git_marker.is_file()
+    dirty_lines = _git_status(repo_root)
+    dirty_count = len(dirty_lines)
+
+    if dirty_count < args.threshold:
+        print(f"OK: dirty file count {dirty_count} is below threshold {args.threshold}.")
+        return 0
+    if in_linked_worktree:
+        print(f"OK: dirty file count {dirty_count} requires a worktree and current workspace is linked.")
+        return 0
+
+    print(
+        f"ERROR: dirty file count {dirty_count} exceeds threshold {args.threshold}; use a linked worktree before staging, committing, or pushing.",
+        file=sys.stderr,
+    )
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
+
+
 def default_workflow_config() -> WorkflowConfig:
     glm_provider = ProviderConfig(
         name="glm",
@@ -957,6 +1009,7 @@ def _export_assets(output_dir: Path) -> None:
     (prompts_dir / "analyze_image.py").write_text(build_image_analyzer_script())
     (prompts_dir / "endpoint_preflight.py").write_text(build_endpoint_preflight_script())
     (prompts_dir / "preflight_stage.py").write_text(build_stage_preflight_script())
+    (prompts_dir / "require_worktree.py").write_text(build_require_worktree_script())
 
 
 @app.callback()
@@ -1171,6 +1224,21 @@ def preflight_stage(
     os.execv(
         sys.executable,
         [sys.executable, str(script_path), "--repo-root", str(repo_root), "--max-files", str(max_files), *sum([["--path", item] for item in path], [])],
+    )
+
+
+@app.command("require-worktree")
+def require_worktree(
+    repo_root: Path = typer.Option(Path.cwd(), exists=True, file_okay=False, dir_okay=True),
+    threshold: int = typer.Option(10, min=1),
+) -> None:
+    script_path = Path.cwd() / ".dual-agents" / "require_worktree.py"
+    if not script_path.exists():
+        typer.echo("require_worktree.py is not present in the current repo. Run init-target/export first.", err=True)
+        raise typer.Exit(code=1)
+    os.execv(
+        sys.executable,
+        [sys.executable, str(script_path), "--repo-root", str(repo_root), "--threshold", str(threshold)],
     )
 
 

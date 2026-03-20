@@ -54,3 +54,4 @@ class WorkflowConfig(BaseModel):
     premium_review_on_conflicting_evidence: bool = True
     premium_review_on_repeated_review_cycles: int = 2
     premium_review_on_delivery_sensitive: bool = True
+    worktree_required_dirty_file_threshold: int = 10

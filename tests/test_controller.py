@@ -24,6 +24,7 @@ from dual_agents.controller import (
     validate_analysis_recovery_step,
     validate_post_review_adjudication,
     validate_staging_scope,
+    validate_worktree_requirement,
     validate_user_facing_report,
 )
 from dual_agents.workflow import WorkflowStage
@@ -183,6 +184,23 @@ def test_validate_staging_scope_accepts_small_explicit_file_set() -> None:
         repo_dirty_file_count=3,
         requested_file_count=3,
         has_unrelated_dirty_files=False,
+    )
+
+
+def test_validate_worktree_requirement_rejects_dirty_primary_workspace() -> None:
+    with pytest.raises(WorkflowViolation):
+        validate_worktree_requirement(
+            repo_dirty_file_count=12,
+            in_linked_worktree=False,
+            dirty_file_threshold=10,
+        )
+
+
+def test_validate_worktree_requirement_accepts_linked_worktree() -> None:
+    validate_worktree_requirement(
+        repo_dirty_file_count=12,
+        in_linked_worktree=True,
+        dirty_file_threshold=10,
     )
 
 

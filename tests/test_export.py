@@ -19,6 +19,7 @@ def test_export_writes_expected_files(tmp_path: Path) -> None:
     assert (tmp_path / ".dual-agents" / "analyze_image.py").exists()
     assert (tmp_path / ".dual-agents" / "endpoint_preflight.py").exists()
     assert (tmp_path / ".dual-agents" / "preflight_stage.py").exists()
+    assert (tmp_path / ".dual-agents" / "require_worktree.py").exists()
     validator = (tmp_path / ".dual-agents" / "validate_report.py").read_text()
     assert "--mode" in validator
     assert "post-review" in validator

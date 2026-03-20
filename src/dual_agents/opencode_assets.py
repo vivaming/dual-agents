@@ -33,6 +33,8 @@ def build_command_markdown(config: WorkflowConfig) -> str:
         Before saying something is pushed, remotely available, deployed, or notified, verify delivery with:
         {verification_steps}
         If the repo is dirty or ahead with unrelated work, isolate delivery work in a worktree before pushing.
+        If the repo has at least {config.worktree_required_dirty_file_threshold} dirty files, require a linked worktree before any staging, commit, or push.
+        Check that rule with `python .dual-agents/require_worktree.py --threshold {config.worktree_required_dirty_file_threshold}`.
         Before any `git add` or commit in a dirty repo, run `python .dual-agents/preflight_stage.py --path <explicit-file> ...`.
         Never use `git add -A`, `git add .`, wildcard pathspecs, or directory-wide staging in a dirty repo.
         If staging preflight fails or a run shows `SSE read timed out` around staging/commit, stop and classify the unit as `STALLED` instead of retrying broad git commands.
@@ -161,6 +163,8 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             If neither native image input nor an absolute image path is available, classify the unit as `STALLED` instead of improvising.
             Production publish, deploy changes, and external system reconfiguration are high-risk actions and require explicit review before execution.
             When the target repo is dirty, require isolated delivery work in a worktree.
+            If the repo has at least {config.worktree_required_dirty_file_threshold} dirty files and the current workspace is not a linked worktree, stop immediately and report `STALLED`.
+            Check this with `python .dual-agents/require_worktree.py --threshold {config.worktree_required_dirty_file_threshold}` before any staging, commit, or push.
             Before any staging or commit step in a dirty repo, run `python .dual-agents/preflight_stage.py --path <explicit-file> ...`.
             If staging preflight fails, stop immediately and report `STALLED`.
             After a staging preflight failure, do not attempt a narrower `git add` or any commit in the same session.
@@ -203,6 +207,8 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Use `python .dual-agents/analyze_image.py --image-path /absolute/path/to/image.png --prompt "<bounded question>"` only when an absolute image path is available.
             If native image input is supported in the current runtime, use that capability directly instead of Codex handoff.
             If the session is degraded by repeated malformed tool calls or timeouts, stop and point the coordinator to a stop report instead of improvising more retries.
+            If the repo has at least {config.worktree_required_dirty_file_threshold} dirty files and the current workspace is not a linked worktree, return `STALLED` before any staging, commit, or push.
+            Run `python .dual-agents/require_worktree.py --threshold {config.worktree_required_dirty_file_threshold}` first.
             In a dirty repo, never stage with `git add -A`, `git add .`, wildcard pathspecs, or directory-wide paths.
             Run `python .dual-agents/preflight_stage.py --path <explicit-file> ...` before staging; if it fails, return `STALLED`.
             After a preflight failure, do not run `git add` or `git commit` in the same session.

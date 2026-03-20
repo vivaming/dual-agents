@@ -7,6 +7,11 @@ from dual_agents.stop_monitor import StopCategory, classify_stop
 
 SCENARIOS: tuple[tuple[str, StopCategory], ...] = (
     (
+        "$ python .dual-agents/require_worktree.py --threshold 10\n"
+        "ERROR: dirty file count 41 exceeds threshold 10; use a linked worktree before staging, committing, or pushing.",
+        StopCategory.WORKTREE_REQUIRED,
+    ),
+    (
         "$ python .dual-agents/preflight_stage.py --path robots.txt\n"
         "ERROR: repository contains unrelated dirty files; isolate the unit in a worktree or use a narrower explicit file list.\n"
         "$ git add robots.txt sitemap.xml",

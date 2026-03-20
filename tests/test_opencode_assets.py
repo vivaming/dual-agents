@@ -31,6 +31,7 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "monitor_stop.py" in agents["dual-coordinator.md"]
     assert "spec_completeness_analyzer.py" in agents["dual-coordinator.md"]
     assert "endpoint_preflight.py" in agents["dual-coordinator.md"]
+    assert "require_worktree.py" in agents["dual-coordinator.md"]
     assert "do not improvise a python heredoc" in agents["dual-coordinator.md"].lower()
     assert "inspect schema" in agents["dual-coordinator.md"].lower()
     assert "identify the exact target url" in agents["dual-coordinator.md"].lower()
@@ -41,8 +42,10 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "preflight_stage.py" in agents["dual-coordinator.md"]
     assert "git add -a" in agents["dual-coordinator.md"].lower()
     assert "do not attempt a narrower `git add`" in agents["dual-coordinator.md"].lower()
+    assert "current workspace is not a linked worktree" in agents["dual-coordinator.md"].lower()
     assert "return `stalled`" in agents["glm-builder.md"].lower()
     assert "preflight_stage.py" in agents["glm-builder.md"]
+    assert "require_worktree.py" in agents["glm-builder.md"]
     assert "do not write ad hoc python heredocs" in agents["glm-builder.md"].lower()
     assert "codex handoff" in agents["glm-builder.md"].lower()
     assert "do not proceed until `python .dual-agents/endpoint_preflight.py --url <target-url>` succeeds".lower() in agents["glm-builder.md"].lower()
