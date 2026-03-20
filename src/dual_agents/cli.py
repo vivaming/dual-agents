@@ -166,6 +166,7 @@ from pathlib import Path
 
 
 class StopCategory(str, Enum):
+    PREFLIGHT_BYPASS = "PREFLIGHT_BYPASS"
     DIRTY_REPO_STAGE_OVERLOAD = "DIRTY_REPO_STAGE_OVERLOAD"
     STREAM_TIMEOUT = "STREAM_TIMEOUT"
     TOOL_SCHEMA_ERROR = "TOOL_SCHEMA_ERROR"
@@ -238,6 +239,10 @@ def _extract_evidence(text: str, patterns):
 
 def _recovery_for(category: StopCategory):
     recovery_map = {
+        StopCategory.PREFLIGHT_BYPASS: (
+            "Do not run more git staging commands in this session. Stop immediately, isolate the unit in a worktree or narrow the explicit file list, and restart from the failed preflight step.",
+            True,
+        ),
         StopCategory.STREAM_TIMEOUT: (
             "Save a bounded checkpoint, restart in a fresh session, and retry only the smallest unresolved unit.",
             True,
@@ -283,6 +288,30 @@ def classify_stop(raw_text: str) -> StopSignal:
     if not text:
         recovery, fresh = _recovery_for(StopCategory.UNKNOWN)
         return StopSignal(StopCategory.UNKNOWN, (), recovery, fresh, ())
+
+    if (
+        "preflight_stage.py" in text
+        and "repository contains unrelated dirty files" in text
+        and "git add " in text
+    ):
+        recovery, fresh = _recovery_for(StopCategory.PREFLIGHT_BYPASS)
+        evidence = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip()
+            and (
+                "preflight_stage.py" in line
+                or "repository contains unrelated dirty files" in line
+                or "git add " in line
+            )
+        ]
+        return StopSignal(
+            StopCategory.PREFLIGHT_BYPASS,
+            tuple(dict.fromkeys(evidence)),
+            recovery,
+            fresh,
+            (StopCategory.PREFLIGHT_BYPASS,),
+        )
 
     if (
         "SSE read timed out" in text

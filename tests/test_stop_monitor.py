@@ -13,6 +13,16 @@ def test_classify_stop_dirty_repo_stage_overload() -> None:
     assert "worktree" in signal.recovery.lower()
 
 
+def test_classify_stop_preflight_bypass() -> None:
+    signal = classify_stop(
+        "$ python .dual-agents/preflight_stage.py --path robots.txt\n"
+        "ERROR: repository contains unrelated dirty files; isolate the unit in a worktree or use a narrower explicit file list.\n"
+        "$ git add robots.txt sitemap.xml\n"
+    )
+    assert signal.category == StopCategory.PREFLIGHT_BYPASS
+    assert signal.requires_fresh_session is True
+
+
 def test_classify_stop_timeout() -> None:
     signal = classify_stop("Error: SSE read timed out")
     assert signal.category == StopCategory.STREAM_TIMEOUT

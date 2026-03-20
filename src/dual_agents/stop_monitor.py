@@ -6,6 +6,7 @@ from enum import Enum
 
 
 class StopCategory(str, Enum):
+    PREFLIGHT_BYPASS = "PREFLIGHT_BYPASS"
     DIRTY_REPO_STAGE_OVERLOAD = "DIRTY_REPO_STAGE_OVERLOAD"
     STREAM_TIMEOUT = "STREAM_TIMEOUT"
     TOOL_SCHEMA_ERROR = "TOOL_SCHEMA_ERROR"
@@ -79,6 +80,10 @@ def _extract_evidence(text: str, patterns: tuple[re.Pattern[str], ...]) -> tuple
 
 def _recovery_for(category: StopCategory) -> tuple[str, bool]:
     recovery_map = {
+        StopCategory.PREFLIGHT_BYPASS: (
+            "Do not run more git staging commands in this session. Stop immediately, isolate the unit in a worktree or narrow the explicit file list, and restart from the failed preflight step.",
+            True,
+        ),
         StopCategory.DIRTY_REPO_STAGE_OVERLOAD: (
             "Inspect git status, isolate the unit in a worktree or narrow to an explicit file list, and rerun the same bounded staging step.",
             False,
@@ -129,6 +134,30 @@ def classify_stop(raw_text: str) -> StopSignal:
             recovery=recovery,
             requires_fresh_session=fresh,
             matched_categories=(),
+        )
+
+    if (
+        "preflight_stage.py" in text
+        and "repository contains unrelated dirty files" in text
+        and "git add " in text
+    ):
+        recovery, fresh = _recovery_for(StopCategory.PREFLIGHT_BYPASS)
+        evidence = [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip()
+            and (
+                "preflight_stage.py" in line
+                or "repository contains unrelated dirty files" in line
+                or "git add " in line
+            )
+        ]
+        return StopSignal(
+            category=StopCategory.PREFLIGHT_BYPASS,
+            evidence=tuple(dict.fromkeys(evidence)),
+            recovery=recovery,
+            requires_fresh_session=fresh,
+            matched_categories=(StopCategory.PREFLIGHT_BYPASS,),
         )
 
     if (

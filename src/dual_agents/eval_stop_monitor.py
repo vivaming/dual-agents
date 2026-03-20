@@ -7,6 +7,12 @@ from dual_agents.stop_monitor import StopCategory, classify_stop
 
 SCENARIOS: tuple[tuple[str, StopCategory], ...] = (
     (
+        "$ python .dual-agents/preflight_stage.py --path robots.txt\n"
+        "ERROR: repository contains unrelated dirty files; isolate the unit in a worktree or use a narrower explicit file list.\n"
+        "$ git add robots.txt sitemap.xml",
+        StopCategory.PREFLIGHT_BYPASS,
+    ),
+    (
         "$ git status --short\n"
         " M index.html\n"
         "?? data/intro_cache/foo.txt\n"

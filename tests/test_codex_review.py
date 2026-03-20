@@ -26,6 +26,7 @@ def test_review_prompt_mentions_review_only_default() -> None:
     assert "endpoint_preflight.py" in prompt
     assert "url/port errors" in prompt.lower()
     assert "preflight_stage.py" in prompt
+    assert "preflight fails and the workflow still attempts `git add`" in prompt.lower()
     assert "git add -a" in prompt.lower()
     assert "sse read timed out" in prompt.lower()
 

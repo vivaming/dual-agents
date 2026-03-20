@@ -163,6 +163,7 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             When the target repo is dirty, require isolated delivery work in a worktree.
             Before any staging or commit step in a dirty repo, run `python .dual-agents/preflight_stage.py --path <explicit-file> ...`.
             If staging preflight fails, stop immediately and report `STALLED`.
+            After a staging preflight failure, do not attempt a narrower `git add` or any commit in the same session.
             Do not use `git add -A`, `git add .`, wildcard pathspecs, or directory-wide staging in a dirty repo.
             If a staging/commit step ends in `SSE read timed out`, do not retry broader git commands.
             Recovery is limited to:
@@ -204,6 +205,7 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             If the session is degraded by repeated malformed tool calls or timeouts, stop and point the coordinator to a stop report instead of improvising more retries.
             In a dirty repo, never stage with `git add -A`, `git add .`, wildcard pathspecs, or directory-wide paths.
             Run `python .dual-agents/preflight_stage.py --path <explicit-file> ...` before staging; if it fails, return `STALLED`.
+            After a preflight failure, do not run `git add` or `git commit` in the same session.
             """
         ).strip()
         + "\n",
