@@ -22,6 +22,28 @@ class DeliveryProofStatus(str, Enum):
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
+class ReviewUnitStatus(str, Enum):
+    NOT_STARTED = "NOT_STARTED"
+    IN_PROGRESS = "IN_PROGRESS"
+    PASS = "PASS"
+    PASS_WITH_EXCEPTION = "PASS_WITH_EXCEPTION"
+    CHANGES_REQUIRED = "CHANGES_REQUIRED"
+    BLOCKED = "BLOCKED"
+    STALLED = "STALLED"
+
+
+class CauseClassification(str, Enum):
+    INTERNAL = "INTERNAL"
+    EXTERNAL = "EXTERNAL"
+    MIXED = "MIXED"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+class ProgressionDecision(str, Enum):
+    YES = "YES"
+    NO = "NO"
+
+
 class DecisionCategory(str, Enum):
     ORDINARY_IMPLEMENTATION = "ORDINARY_IMPLEMENTATION"
     NEW_TASKS = "NEW_TASKS"
@@ -58,14 +80,25 @@ class BuilderVerdict(str, Enum):
 @dataclass(frozen=True)
 class ReviewResult:
     verdict: ReviewVerdict
+    current_unit_status: ReviewUnitStatus
     blocking_issues: tuple[str, ...]
     non_blocking_issues: tuple[str, ...]
+    cause_classification: CauseClassification
     delivery_proof_status: DeliveryProofStatus
+    next_bounded_unit_may_start: ProgressionDecision
     suggested_next_action: str
 
     @property
     def has_blocking_issues(self) -> bool:
-        return self.verdict == ReviewVerdict.CHANGES_REQUESTED or bool(self.blocking_issues)
+        return (
+            self.verdict == ReviewVerdict.CHANGES_REQUESTED
+            or bool(self.blocking_issues)
+            or self.next_bounded_unit_may_start == ProgressionDecision.NO
+        )
+
+    @property
+    def may_start_next_unit(self) -> bool:
+        return self.next_bounded_unit_may_start == ProgressionDecision.YES
 
 
 @dataclass(frozen=True)
@@ -83,10 +116,15 @@ class BuilderResult:
 
 FIELD_PATTERNS = {
     "verdict": re.compile(r"^\s*(?:\d+\.\s*)?Verdict:\s*(.+?)\s*$", re.IGNORECASE),
+    "current_unit_status": re.compile(r"^\s*(?:\d+\.\s*)?Current unit status:\s*(.+?)\s*$", re.IGNORECASE),
     "blocking_issues": re.compile(r"^\s*(?:\d+\.\s*)?Blocking issues:\s*(.*?)\s*$", re.IGNORECASE),
     "non_blocking_issues": re.compile(r"^\s*(?:\d+\.\s*)?Non-blocking issues:\s*(.*?)\s*$", re.IGNORECASE),
+    "cause_classification": re.compile(r"^\s*(?:\d+\.\s*)?Cause classification:\s*(.+?)\s*$", re.IGNORECASE),
     "delivery_proof_status": re.compile(
         r"^\s*(?:\d+\.\s*)?Delivery proof status:\s*(.+?)\s*$", re.IGNORECASE
+    ),
+    "next_bounded_unit_may_start": re.compile(
+        r"^\s*(?:\d+\.\s*)?Next bounded unit may start:\s*(.+?)\s*$", re.IGNORECASE
     ),
     "suggested_next_action": re.compile(
         r"^\s*(?:\d+\.\s*)?Suggested next action:\s*(.+?)\s*$", re.IGNORECASE
@@ -139,7 +177,16 @@ def parse_review_result(raw_review: str) -> ReviewResult:
         if active_multiline_field and line.strip():
             continuations[active_multiline_field].append(line)
 
-    required_fields = {"verdict", "blocking_issues", "non_blocking_issues", "delivery_proof_status", "suggested_next_action"}
+    required_fields = {
+        "verdict",
+        "current_unit_status",
+        "blocking_issues",
+        "non_blocking_issues",
+        "cause_classification",
+        "delivery_proof_status",
+        "next_bounded_unit_may_start",
+        "suggested_next_action",
+    }
     missing_fields = sorted(required_fields - captured.keys())
     if missing_fields:
         raise WorkflowViolation(f"Review output missing required fields: {', '.join(missing_fields)}")
@@ -155,6 +202,20 @@ def parse_review_result(raw_review: str) -> ReviewResult:
         raise WorkflowViolation(
             f"Invalid delivery proof status: {captured['delivery_proof_status']}"
         ) from exc
+    try:
+        current_unit_status = ReviewUnitStatus(captured["current_unit_status"].upper())
+    except ValueError as exc:
+        raise WorkflowViolation(f"Invalid current unit status: {captured['current_unit_status']}") from exc
+    try:
+        cause_classification = CauseClassification(captured["cause_classification"].upper())
+    except ValueError as exc:
+        raise WorkflowViolation(f"Invalid cause classification: {captured['cause_classification']}") from exc
+    try:
+        next_bounded_unit_may_start = ProgressionDecision(captured["next_bounded_unit_may_start"].upper())
+    except ValueError as exc:
+        raise WorkflowViolation(
+            f"Invalid next bounded unit may start value: {captured['next_bounded_unit_may_start']}"
+        ) from exc
 
     suggested_next_action = captured["suggested_next_action"].strip()
     if not suggested_next_action:
@@ -162,11 +223,14 @@ def parse_review_result(raw_review: str) -> ReviewResult:
 
     return ReviewResult(
         verdict=verdict,
+        current_unit_status=current_unit_status,
         blocking_issues=_normalize_issues(captured["blocking_issues"], continuations["blocking_issues"]),
         non_blocking_issues=_normalize_issues(
             captured["non_blocking_issues"], continuations["non_blocking_issues"]
         ),
+        cause_classification=cause_classification,
         delivery_proof_status=delivery_proof_status,
+        next_bounded_unit_may_start=next_bounded_unit_may_start,
         suggested_next_action=suggested_next_action,
     )
 
@@ -403,6 +467,12 @@ class WorkflowController:
         elif self.stage == WorkflowStage.EPIC_DRAFT:
             self.stage = WorkflowStage.EPIC_REVIEW
         elif self.stage == WorkflowStage.EPIC_REVIEW:
+            if self.last_review_result is None:
+                raise WorkflowViolation(
+                    "Lead review is required before advancing from EPIC_REVIEW to implementation."
+                )
+            if not self.last_review_result.may_start_next_unit:
+                raise WorkflowViolation("Lead review did not authorize implementation to start yet.")
             if self.critical_review_required:
                 raise WorkflowViolation(
                     "Critical review is required before advancing from EPIC_REVIEW to implementation."
@@ -431,12 +501,15 @@ class WorkflowController:
         return self.stage
 
     def submit_review(self, raw_review: str) -> ReviewResult:
-        if self.stage != WorkflowStage.CRITICAL_REVIEW:
-            raise WorkflowViolation("Review results may only be submitted during CRITICAL_REVIEW.")
+        if self.stage not in {WorkflowStage.EPIC_REVIEW, WorkflowStage.CRITICAL_REVIEW}:
+            raise WorkflowViolation("Review results may only be submitted during EPIC_REVIEW or CRITICAL_REVIEW.")
         review_result = parse_review_result(raw_review)
         self.last_review_result = review_result
         self.critical_review_required = False
-        self.stage = WorkflowStage.IMPLEMENTATION if review_result.has_blocking_issues else WorkflowStage.ADJUDICATION
+        if self.stage == WorkflowStage.EPIC_REVIEW:
+            self.stage = WorkflowStage.EPIC_DRAFT if review_result.has_blocking_issues else WorkflowStage.IMPLEMENTATION
+        else:
+            self.stage = WorkflowStage.IMPLEMENTATION if review_result.has_blocking_issues else WorkflowStage.ADJUDICATION
         return review_result
 
     def start_builder_handoff(

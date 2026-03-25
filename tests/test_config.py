@@ -10,9 +10,9 @@ def test_provider_config_requires_model() -> None:
         ProviderConfig(name="glm")
 
 
-def test_reviewer_defaults_to_codex_exec() -> None:
+def test_reviewer_defaults_to_codex_exec_with_gpt_5_4() -> None:
     reviewer = ReviewerConfig(prompt="Review only.")
-    assert reviewer.command == ["codex", "exec"]
+    assert reviewer.command == ["codex", "exec", "--model", "gpt-5.4"]
 
 
 def test_default_workflow_enables_clean_output_and_structured_breakdowns() -> None:

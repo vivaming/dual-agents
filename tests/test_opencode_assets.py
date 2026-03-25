@@ -7,6 +7,7 @@ from dual_agents.opencode_assets import build_agent_markdown, build_command_mark
 def test_build_command_mentions_dual_trigger() -> None:
     markdown = build_command_markdown(default_workflow_config())
     assert "/dual" in markdown
+    assert "lead-review design gate" in markdown.lower()
     assert "do not claim remote delivery from local success alone" in markdown.lower()
     assert "git log <target-branch> -1 --oneline" in markdown
     assert "remotely available, deployed, or notified" in markdown.lower()
@@ -23,6 +24,8 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "one row per requested brand" in agents["dual-coordinator.md"].lower()
     assert "validate_report.py" in agents["dual-coordinator.md"]
     assert "do not begin broad remediation in the same turn" in agents["dual-coordinator.md"].lower()
+    assert "before implementation starts on a new bounded unit" in agents["dual-coordinator.md"].lower()
+    assert "next bounded unit may start" in agents["dual-coordinator.md"].lower()
     assert "--mode post-review" in agents["dual-coordinator.md"]
     assert "forum_adjudication" in agents["dual-coordinator.md"].lower()
     assert "--mode forum" in agents["dual-coordinator.md"]

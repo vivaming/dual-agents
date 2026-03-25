@@ -33,9 +33,10 @@ The dual-agent workflow exists to keep ordinary development conversation and imp
 ### 4. Codex Reviewer
 
 - External review worker invoked through local `codex` CLI
-- Used only at review gates or when the user explicitly requests GPT / Codex review
+- Used at the design gate before implementation and at critical review gates, or when the user explicitly requests GPT / Codex review
 - Default behavior is review-only
 - Reviewer edits are not the default path and should be user-directed
+- Reviewer runtime should be pinned to `gpt-5.4` unless the user explicitly overrides it
 
 ## Agent Skill Policy
 
@@ -72,7 +73,8 @@ Instead, the coordinator should pass only the minimum repo context and the most 
 
 ### Review Gate Discipline
 
-- Call Codex only when:
+- Call Codex when:
+  - a new bounded unit needs lead design review before implementation
   - the user asks for critical review
   - a review gate is reached in the workflow
   - blocking issues need independent judgment
@@ -119,16 +121,17 @@ Triggered explicitly by commands like:
 
 The coordinator should:
 1. understand the task from local repo context
-2. delegate implementation to `glm-builder`
-3. request self-review from the builder
-4. invoke Codex at review gates
-5. classify findings into blocking vs non-blocking
-6. send blocking issues back to the builder
-7. bootstrap a persistent run log for each significant complex run
-8. run no more than 5 review/fix loops per issue cluster before escalation
-9. invoke `independent-auditor` after loop exhaustion
-10. reset the loop budget once if the auditor validates direction
-11. pause and report findings to the user if the second loop block still fails
+2. invoke Codex for lead design review on the bounded unit
+3. delegate implementation to `glm-builder`
+4. request self-review from the builder
+5. invoke Codex at final critical review gates
+6. classify findings into blocking vs non-blocking
+7. send blocking issues back to the builder
+8. bootstrap a persistent run log for each significant complex run
+9. run no more than 5 review/fix loops per issue cluster before escalation
+10. invoke `independent-auditor` after loop exhaustion
+11. reset the loop budget once if the auditor validates direction
+12. pause and report findings to the user if the second loop block still fails
 
 ## Coordinator Decision Rules
 

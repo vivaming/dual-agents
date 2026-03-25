@@ -2,9 +2,12 @@ import pytest
 
 from dual_agents.controller import (
     BuilderVerdict,
+    CauseClassification,
     DecisionCategory,
     DeliveryProofStatus,
     HighRiskAction,
+    ProgressionDecision,
+    ReviewUnitStatus,
     ReviewVerdict,
     TaskType,
     WorkflowController,
@@ -26,11 +29,14 @@ from dual_agents.workflow import WorkflowStage
 
 VALID_REVIEW = """
 1. Verdict: APPROVED
-2. Blocking issues: None
-3. Non-blocking issues:
+2. Current unit status: PASS
+3. Blocking issues: None
+4. Non-blocking issues:
 - tighten naming
-4. Delivery proof status: NOT_PROVEN
-5. Suggested next action: Verify the remote artifact before completion.
+5. Cause classification: NOT_APPLICABLE
+6. Delivery proof status: NOT_PROVEN
+7. Next bounded unit may start: YES
+8. Suggested next action: Verify the remote artifact before completion.
 """
 
 VALID_BUILDER_RESULT = """
@@ -47,9 +53,12 @@ VALID_BUILDER_RESULT = """
 def test_parse_review_result_accepts_structured_output() -> None:
     result = parse_review_result(VALID_REVIEW)
     assert result.verdict == ReviewVerdict.APPROVED
+    assert result.current_unit_status == ReviewUnitStatus.PASS
     assert result.blocking_issues == ()
     assert result.non_blocking_issues == ("tighten naming",)
+    assert result.cause_classification == CauseClassification.NOT_APPLICABLE
     assert result.delivery_proof_status == DeliveryProofStatus.NOT_PROVEN
+    assert result.next_bounded_unit_may_start == ProgressionDecision.YES
 
 
 def test_parse_review_result_rejects_missing_field() -> None:
@@ -63,11 +72,14 @@ def test_controller_routes_changes_requested_back_to_implementation() -> None:
     review = controller.submit_review(
         """
 1. Verdict: CHANGES_REQUESTED
-2. Blocking issues:
+2. Current unit status: CHANGES_REQUIRED
+3. Blocking issues:
 - parser output malformed
-3. Non-blocking issues: None
-4. Delivery proof status: NOT_APPLICABLE
-5. Suggested next action: Fix the malformed output and rerun review.
+4. Non-blocking issues: None
+5. Cause classification: INTERNAL
+6. Delivery proof status: NOT_APPLICABLE
+7. Next bounded unit may start: NO
+8. Suggested next action: Fix the malformed output and rerun review.
 """
     )
     assert review.has_blocking_issues is True
@@ -106,9 +118,36 @@ def test_partial_status_requires_critical_review_even_for_ordinary_work() -> Non
 def test_controller_blocks_epic_progress_when_review_is_required() -> None:
     controller = WorkflowController()
     controller.stage = WorkflowStage.EPIC_REVIEW
-    controller.flag_decision_for_review(decision_category=DecisionCategory.NEW_TASKS)
     with pytest.raises(WorkflowViolation):
         controller.advance()
+
+
+def test_epic_review_result_can_start_implementation() -> None:
+    controller = WorkflowController()
+    controller.stage = WorkflowStage.EPIC_REVIEW
+    review = controller.submit_review(VALID_REVIEW)
+    assert review.may_start_next_unit is True
+    assert controller.stage == WorkflowStage.IMPLEMENTATION
+
+
+def test_epic_review_with_no_progression_loops_back_to_epic_draft() -> None:
+    controller = WorkflowController()
+    controller.stage = WorkflowStage.EPIC_REVIEW
+    review = controller.submit_review(
+        """
+1. Verdict: CHANGES_REQUESTED
+2. Current unit status: CHANGES_REQUIRED
+3. Blocking issues:
+- clarify acceptance criteria
+4. Non-blocking issues: None
+5. Cause classification: INTERNAL
+6. Delivery proof status: NOT_APPLICABLE
+7. Next bounded unit may start: NO
+8. Suggested next action: Narrow the unit and rerun lead review.
+"""
+    )
+    assert review.may_start_next_unit is False
+    assert controller.stage == WorkflowStage.EPIC_DRAFT
 
 
 def test_controller_clears_review_requirement_after_valid_review() -> None:

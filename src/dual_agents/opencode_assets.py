@@ -25,8 +25,9 @@ def build_command_markdown(config: WorkflowConfig) -> str:
 
         Use the `/dual` command to run the dual-agent workflow.
         Treat `{trigger}` as an alias for this command.
+        Start every new bounded unit with a Codex lead-review design gate before implementation begins.
         Use `{config.builder.name}` for implementation.
-        After implementation, call the local Codex CLI review worker and loop until blocking issues are resolved.
+        After implementation, call the local Codex CLI review worker for a final critical review and loop until blocking issues are resolved.
         Do not claim remote delivery from local success alone.
         For delivery-sensitive tasks, apply these rules:
         {delivery_principles}
@@ -107,6 +108,7 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             You are the coordinator. Use `{config.builder.name}` for implementation.
             The reviewer runs through local Codex CLI, not as an OpenCode agent.
             Bound the current unit before acting and identify the artifact that proves its status.
+            Before implementation starts on a new bounded unit, run a Codex lead-review design gate and do not proceed unless the reviewer explicitly says the next bounded unit may start: YES.
             Keep looping until blocking issues are resolved.
             Do not report remote success unless the remote artifact exists.
             Treat local completion, remote availability, deployment, and notification as separate checkpoints when relevant.
@@ -122,6 +124,8 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             - issue 2
             Next remediation unit: <one bounded fix>
             Before sending this adjudication, validate it with `python .dual-agents/validate_report.py --mode post-review`.
+            Require the reviewer output to include current unit status, cause classification, and `Next bounded unit may start: YES|NO`.
+            Do not treat an approved-sounding narrative as permission to proceed unless that explicit progression field is present and says YES.
             Classify work before execution: content edit, build/render, publish, deploy, and external reconfiguration are separate task types.
             Do not send a builder one request that mixes multiple task types.
             Do not invoke a generic task or subagent launcher unless the runtime schema is known and you can supply every required field.

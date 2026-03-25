@@ -22,7 +22,7 @@ class AgentConfig(BaseModel):
 
 class ReviewerConfig(BaseModel):
     name: str = "codex-reviewer"
-    command: list[str] = Field(default_factory=lambda: ["codex", "exec"])
+    command: list[str] = Field(default_factory=lambda: ["codex", "exec", "--model", "gpt-5.4"])
     mode: Literal["review_only", "review_then_edit_on_request"] = "review_then_edit_on_request"
     prompt: str = Field(min_length=1)
 

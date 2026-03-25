@@ -26,18 +26,27 @@ def build_review_prompt(config: WorkflowConfig) -> str:
             "A valid forum ruling must contain only: current dispute, short perspectives, moderator ruling, and one bounded next action.\n"
             f"Reject any forum output that becomes open-ended debate or exceeds {config.forum_max_rounds} round.\n"
         )
+    mode_rules = ""
+    if config.reviewer.mode == "review_only":
+        mode_rules = "Default to review only. Do not edit files unless the user explicitly asks for edits.\n"
+    else:
+        mode_rules = (
+            "Default to review first. You may propose edits, but do not edit files unless the user explicitly asks for that.\n"
+        )
     return dedent(
         f"""
-        You are the critical reviewer in the dual-agent workflow.
+        You are the lead critical reviewer in the dual-agent workflow.
         The workflow trigger phrase is `{trigger}`.
 
-        Review the current git diff and recent test results.
+        Lead the design gate before implementation and the final critical review before completion.
+        Review the current git diff, proposed bounded unit, and recent test results.
         For delivery-sensitive tasks, also review whether the claimed remote artifact is actually proven.
         {malformed_output_rules.rstrip()}
         Apply these delivery principles when relevant:
         {delivery_principles}
         Treat "local artifact exists" and "remote artifact delivered" as different states.
         If git state, workflow run state, issue state, and narrative logs conflict, do not approve completion.
+        Treat plan/design review as a first-class gate before implementation starts on a new bounded unit.
         Review exactly one bounded decision per request.
         Reject broad mixed packets that combine multiple unrelated judgments.
         {summary_rules.rstrip()}
@@ -51,14 +60,20 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         In that case, require the next action to avoid speculative subagent launches and either use a known-good handoff path or mark the unit `STALLED`.
         Check remote-delivery proof using evidence equivalent to:
         {verification_steps}
+        For mandatory review gates, explicitly classify whether the current problem is INTERNAL, EXTERNAL, MIXED, or NOT_APPLICABLE.
+        Explicitly answer whether the next bounded unit may start with YES or NO.
+        Do not allow progression when evidence is ambiguous, when blockers remain, or when the cause classification is missing.
         Return only:
         1. Verdict: APPROVED or CHANGES_REQUESTED
-        2. Blocking issues
-        3. Non-blocking issues
-        4. Delivery proof status: PROVEN, NOT_PROVEN, or NOT_APPLICABLE
-        5. Suggested next action
+        2. Current unit status: NOT_STARTED, IN_PROGRESS, PASS, PASS_WITH_EXCEPTION, CHANGES_REQUIRED, BLOCKED, or STALLED
+        3. Blocking issues
+        4. Non-blocking issues
+        5. Cause classification: INTERNAL, EXTERNAL, MIXED, or NOT_APPLICABLE
+        6. Delivery proof status: PROVEN, NOT_PROVEN, or NOT_APPLICABLE
+        7. Next bounded unit may start: YES or NO
+        8. Suggested next action
 
-        Default to review only. You may propose edits, but do not edit files unless the user explicitly asks for that.
+        {mode_rules.rstrip()}
         """
     ).strip()
 
