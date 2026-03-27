@@ -30,6 +30,7 @@ def test_init_target_exports_assets_and_prints_next_steps(tmp_path: Path, monkey
     assert result.exit_code == 0
     assert (tmp_path / ".opencode" / "opencode.json").exists()
     assert (tmp_path / ".dual-agents" / "validate_report.py").exists()
+    assert (tmp_path / ".dual-agents" / "validate_review.py").exists()
     assert (tmp_path / ".dual-agents" / "monitor_stop.py").exists()
     assert (tmp_path / ".dual-agents" / "analyze_image.py").exists()
     assert (tmp_path / ".dual-agents" / "endpoint_preflight.py").exists()

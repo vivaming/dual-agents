@@ -10,6 +10,15 @@ def build_command_markdown(config: WorkflowConfig) -> str:
     trigger = config.trigger_phrases[0]
     verification_steps = "\n".join(f"- `{command}`" for command in config.delivery_verification_commands)
     delivery_principles = "\n".join(f"- {principle}" for principle in config.delivery_principles)
+    review_storage_rules = (
+        "Save each lead review to `.dual-agents/reviews/<unit-slug>/lead-review.txt`.\n"
+        "Save each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt`.\n"
+        "Before implementation starts, validate the saved lead review with "
+        "`python .dual-agents/validate_review.py --mode lead --review-file .dual-agents/reviews/<unit-slug>/lead-review.txt`.\n"
+        "Before claiming review pass, unit pass, or final completion, validate the saved final review with "
+        "`python .dual-agents/validate_review.py --mode final --review-file .dual-agents/reviews/<unit-slug>/final-review.txt`.\n"
+        "If the task is delivery-sensitive, require `--require-delivery-proof PROVEN` before remote-success claims.\n"
+    )
     forum_rules = ""
     if config.forum_adjudication_enabled:
         forum_rules = (
@@ -28,6 +37,7 @@ def build_command_markdown(config: WorkflowConfig) -> str:
         Use `{config.builder.name}` for implementation.
         After implementation, call the local Codex CLI review worker and loop until blocking issues are resolved.
         Do not claim remote delivery from local success alone.
+        {review_storage_rules.rstrip()}
         For delivery-sensitive tasks, apply these rules:
         {delivery_principles}
         Before saying something is pushed, remotely available, deployed, or notified, verify delivery with:
@@ -112,6 +122,11 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             You are the coordinator. Use `{config.builder.name}` for implementation.
             The reviewer runs through local Codex CLI, not as an OpenCode agent.
             Bound the current unit before acting and identify the artifact that proves its status.
+            Before implementation starts on a new bounded unit, run a Codex lead-review design gate and do not proceed unless the reviewer explicitly says the next bounded unit may start: YES.
+            Save each lead review to `.dual-agents/reviews/<unit-slug>/lead-review.txt` and validate it with `python .dual-agents/validate_review.py --mode lead --review-file .dual-agents/reviews/<unit-slug>/lead-review.txt` before implementation starts.
+            Save each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt` and validate it with `python .dual-agents/validate_review.py --mode final --review-file .dual-agents/reviews/<unit-slug>/final-review.txt` before any claim that review passed, the unit passed, or the task is complete.
+            If the task is delivery-sensitive, require `--require-delivery-proof PROVEN` on that final validation before any remote-success claim.
+            If the saved review artifact is missing, malformed, or fails validation, classify the unit as `STALLED` instead of summarizing the review from memory.
             Keep looping until blocking issues are resolved.
             Do not report remote success unless the remote artifact exists.
             Treat local completion, remote availability, deployment, and notification as separate checkpoints when relevant.
@@ -127,6 +142,7 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             - issue 2
             Next remediation unit: <one bounded fix>
             Before sending this adjudication, validate it with `python .dual-agents/validate_report.py --mode post-review`.
+            Require the reviewer output to include current unit status, cause classification, and `Next bounded unit may start: YES|NO`.
             If the workflow pauses, degrades, or emits repeated malformed tool calls, save a stop report before retrying.
             For spec completeness or bounded unit analysis, use the fixed analyzer only: `python .dual-agents/spec_completeness_analyzer.py --data-root data --brand-set affiliate --brand-set official`.
             The analyzer may read only `data/<brand>/coverage_report.json` files. Do not improvise a Python heredoc, ad hoc inline script, or alternate file source for completeness analysis.

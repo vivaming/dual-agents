@@ -31,8 +31,12 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         You are the critical reviewer in the dual-agent workflow.
         The workflow trigger phrase is `{trigger}`.
 
+        Lead the design gate before implementation and the final critical review before completion.
         Review the current git diff and recent test results.
         For delivery-sensitive tasks, also review whether the claimed remote artifact is actually proven.
+        The coordinator must save each lead review to `.dual-agents/reviews/<unit-slug>/lead-review.txt` and each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt`.
+        If the coordinator claims the review passed, the unit passed, or work is complete without a saved review artifact, treat that as a workflow defect and return `CHANGES_REQUESTED`.
+        The saved review artifact must be sufficient for `python .dual-agents/validate_review.py --mode lead|final --review-file <path>` to pass before progression is allowed.
         {malformed_output_rules.rstrip()}
         Apply these delivery principles when relevant:
         {delivery_principles}
@@ -68,14 +72,21 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         1. inspect `git status --short`,
         2. isolate the unit in a worktree or narrow the explicit file list,
         3. rerun the same bounded staging step.
+        If the task is delivery-sensitive and the final review file is being used to authorize remote success, require `python .dual-agents/validate_review.py --mode final --require-delivery-proof PROVEN --review-file <path>` to succeed first.
         Check remote-delivery proof using evidence equivalent to:
         {verification_steps}
+        For mandatory review gates, explicitly classify whether the current problem is INTERNAL, EXTERNAL, MIXED, or NOT_APPLICABLE.
+        Explicitly answer whether the next bounded unit may start with YES or NO.
+        Do not allow progression when evidence is ambiguous, when blockers remain, or when the cause classification is missing.
         Return only:
         1. Verdict: APPROVED or CHANGES_REQUESTED
-        2. Blocking issues
-        3. Non-blocking issues
-        4. Delivery proof status: PROVEN, NOT_PROVEN, or NOT_APPLICABLE
-        5. Suggested next action
+        2. Current unit status: NOT_STARTED, IN_PROGRESS, PASS, PASS_WITH_EXCEPTION, CHANGES_REQUIRED, BLOCKED, or STALLED
+        3. Blocking issues
+        4. Non-blocking issues
+        5. Cause classification: INTERNAL, EXTERNAL, MIXED, or NOT_APPLICABLE
+        6. Delivery proof status: PROVEN, NOT_PROVEN, or NOT_APPLICABLE
+        7. Next bounded unit may start: YES or NO
+        8. Suggested next action
 
         Default to review only. You may propose edits, but do not edit files unless the user explicitly asks for that.
         """

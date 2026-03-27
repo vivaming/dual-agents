@@ -399,6 +399,173 @@ if __name__ == "__main__":
 """
 
 
+def build_review_validator_script() -> str:
+    return """#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import re
+import sys
+from pathlib import Path
+
+VALID_VERDICTS = {"APPROVED", "CHANGES_REQUESTED"}
+VALID_STATUSES = {"NOT_STARTED", "IN_PROGRESS", "PASS", "PASS_WITH_EXCEPTION", "CHANGES_REQUIRED", "BLOCKED", "STALLED"}
+VALID_CAUSES = {"INTERNAL", "EXTERNAL", "MIXED", "NOT_APPLICABLE"}
+VALID_DELIVERY = {"PROVEN", "NOT_PROVEN", "NOT_APPLICABLE"}
+VALID_PROGRESS = {"YES", "NO"}
+
+FIELD_PATTERNS = {
+    "verdict": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Verdict:\\s*(.+?)\\s*$", re.IGNORECASE),
+    "current_unit_status": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Current unit status:\\s*(.+?)\\s*$", re.IGNORECASE),
+    "blocking_issues": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Blocking issues:\\s*(.*?)\\s*$", re.IGNORECASE),
+    "non_blocking_issues": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Non-blocking issues:\\s*(.*?)\\s*$", re.IGNORECASE),
+    "cause_classification": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Cause classification:\\s*(.+?)\\s*$", re.IGNORECASE),
+    "delivery_proof_status": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Delivery proof status:\\s*(.+?)\\s*$", re.IGNORECASE),
+    "next_bounded_unit_may_start": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Next bounded unit may start:\\s*(.+?)\\s*$", re.IGNORECASE),
+    "suggested_next_action": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Suggested next action:\\s*(.+?)\\s*$", re.IGNORECASE),
+}
+
+
+def _normalize_issues(raw_value: str, continuation_lines: list[str]) -> tuple[str, ...]:
+    candidates: list[str] = []
+    if raw_value and raw_value.lower() not in {"none", "n/a"}:
+        candidates.append(raw_value)
+    for line in continuation_lines:
+        item = re.sub(r"^\\s*[-*]\\s*", "", line).strip()
+        if item:
+            candidates.append(item)
+    return tuple(candidates)
+
+
+def parse_review(raw_review: str) -> dict[str, object]:
+    captured: dict[str, str] = {}
+    continuations: dict[str, list[str]] = {"blocking_issues": [], "non_blocking_issues": []}
+    active_multiline_field: str | None = None
+
+    for line in raw_review.splitlines():
+        matched_field = None
+        for field_name, pattern in FIELD_PATTERNS.items():
+            match = pattern.match(line)
+            if match:
+                captured[field_name] = match.group(1).strip()
+                active_multiline_field = field_name if field_name in continuations else None
+                matched_field = field_name
+                break
+        if matched_field is not None:
+            continue
+        if active_multiline_field and line.strip():
+            continuations[active_multiline_field].append(line)
+
+    required_fields = {
+        "verdict",
+        "current_unit_status",
+        "blocking_issues",
+        "non_blocking_issues",
+        "cause_classification",
+        "delivery_proof_status",
+        "next_bounded_unit_may_start",
+        "suggested_next_action",
+    }
+    missing_fields = sorted(required_fields - captured.keys())
+    if missing_fields:
+        raise ValueError("Review output missing required fields: " + ", ".join(missing_fields))
+
+    verdict = captured["verdict"].upper()
+    current_unit_status = captured["current_unit_status"].upper()
+    cause_classification = captured["cause_classification"].upper()
+    delivery_proof_status = captured["delivery_proof_status"].upper()
+    next_bounded_unit_may_start = captured["next_bounded_unit_may_start"].upper()
+
+    if verdict not in VALID_VERDICTS:
+        raise ValueError(f"Invalid review verdict: {captured['verdict']}")
+    if current_unit_status not in VALID_STATUSES:
+        raise ValueError(f"Invalid current unit status: {captured['current_unit_status']}")
+    if cause_classification not in VALID_CAUSES:
+        raise ValueError(f"Invalid cause classification: {captured['cause_classification']}")
+    if delivery_proof_status not in VALID_DELIVERY:
+        raise ValueError(f"Invalid delivery proof status: {captured['delivery_proof_status']}")
+    if next_bounded_unit_may_start not in VALID_PROGRESS:
+        raise ValueError(
+            "Invalid next bounded unit may start value: " + captured["next_bounded_unit_may_start"]
+        )
+
+    suggested_next_action = captured["suggested_next_action"].strip()
+    if not suggested_next_action:
+        raise ValueError("Suggested next action must not be empty.")
+
+    return {
+        "verdict": verdict,
+        "current_unit_status": current_unit_status,
+        "blocking_issues": _normalize_issues(captured["blocking_issues"], continuations["blocking_issues"]),
+        "non_blocking_issues": _normalize_issues(
+            captured["non_blocking_issues"], continuations["non_blocking_issues"]
+        ),
+        "cause_classification": cause_classification,
+        "delivery_proof_status": delivery_proof_status,
+        "next_bounded_unit_may_start": next_bounded_unit_may_start,
+        "suggested_next_action": suggested_next_action,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Validate a saved dual-agent review artifact.")
+    parser.add_argument("--review-file", type=Path, required=True, help="Path to the saved review artifact.")
+    parser.add_argument(
+        "--mode",
+        choices=("generic", "lead", "final"),
+        default="generic",
+        help="Review gate mode.",
+    )
+    parser.add_argument(
+        "--require-delivery-proof",
+        choices=tuple(sorted(VALID_DELIVERY)),
+        help="Require a specific delivery proof status.",
+    )
+    args = parser.parse_args()
+
+    if not args.review_file.exists():
+        print(f"ERROR: review artifact not found: {args.review_file}", file=sys.stderr)
+        return 1
+
+    try:
+        review = parse_review(args.review_file.read_text())
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    if review["blocking_issues"]:
+        print("ERROR: review artifact still lists blocking issues.", file=sys.stderr)
+        return 1
+
+    if args.mode in {"lead", "final"}:
+        if review["verdict"] != "APPROVED":
+            print("ERROR: review artifact is not approved.", file=sys.stderr)
+            return 1
+        if review["next_bounded_unit_may_start"] != "YES":
+            print("ERROR: reviewer did not authorize progression.", file=sys.stderr)
+            return 1
+
+    if args.mode == "final" and review["current_unit_status"] not in {"PASS", "PASS_WITH_EXCEPTION"}:
+        print("ERROR: final review artifact does not certify a passing unit state.", file=sys.stderr)
+        return 1
+
+    if args.require_delivery_proof and review["delivery_proof_status"] != args.require_delivery_proof:
+        print(
+            "ERROR: review artifact delivery proof status is "
+            f"{review['delivery_proof_status']}, expected {args.require_delivery_proof}.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print("OK")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+"""
+
+
 def build_endpoint_preflight_script() -> str:
     return """#!/usr/bin/env python3
 from __future__ import annotations
@@ -1004,6 +1171,7 @@ def _export_assets(output_dir: Path) -> None:
         (agents_dir / filename).write_text(content)
     (prompts_dir / "codex-review.txt").write_text(build_review_prompt(config) + "\n")
     (prompts_dir / "validate_report.py").write_text(build_report_validator_script())
+    (prompts_dir / "validate_review.py").write_text(build_review_validator_script())
     (prompts_dir / "monitor_stop.py").write_text(build_stop_monitor_script())
     (prompts_dir / "spec_completeness_analyzer.py").write_text(build_completeness_analyzer_script())
     (prompts_dir / "analyze_image.py").write_text(build_image_analyzer_script())

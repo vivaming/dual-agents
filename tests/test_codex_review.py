@@ -5,7 +5,13 @@ from dual_agents.codex_review import build_review_command, build_review_prompt
 def test_review_prompt_mentions_review_only_default() -> None:
     prompt = build_review_prompt(default_workflow_config())
     assert "do not edit files unless the user explicitly asks" in prompt.lower()
+    assert "lead the design gate before implementation" in prompt.lower()
     assert "delivery proof status" in prompt.lower()
+    assert "validate_review.py" in prompt
+    assert "saved review artifact" in prompt.lower()
+    assert "current unit status" in prompt.lower()
+    assert "cause classification" in prompt.lower()
+    assert "next bounded unit may start" in prompt.lower()
     assert "treat \"local artifact exists\" and \"remote artifact delivered\" as different states" in prompt.lower()
     assert "workflow success as proof unless the run is bound" in prompt.lower()
     assert "review exactly one bounded decision per request" in prompt.lower()

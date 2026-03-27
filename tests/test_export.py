@@ -14,6 +14,7 @@ def test_export_writes_expected_files(tmp_path: Path) -> None:
     assert (tmp_path / ".opencode" / "commands" / "dual.md").exists()
     assert (tmp_path / ".dual-agents" / "codex-review.txt").exists()
     assert (tmp_path / ".dual-agents" / "validate_report.py").exists()
+    assert (tmp_path / ".dual-agents" / "validate_review.py").exists()
     assert (tmp_path / ".dual-agents" / "monitor_stop.py").exists()
     assert (tmp_path / ".dual-agents" / "spec_completeness_analyzer.py").exists()
     assert (tmp_path / ".dual-agents" / "analyze_image.py").exists()
@@ -24,6 +25,9 @@ def test_export_writes_expected_files(tmp_path: Path) -> None:
     assert "--mode" in validator
     assert "post-review" in validator
     assert "forum" in validator
+    review_validator = (tmp_path / ".dual-agents" / "validate_review.py").read_text()
+    assert "--review-file" in review_validator
+    assert "--require-delivery-proof" in review_validator
     assert "DIRTY_REPO_STAGE_OVERLOAD" in (tmp_path / ".dual-agents" / "monitor_stop.py").read_text()
 
 

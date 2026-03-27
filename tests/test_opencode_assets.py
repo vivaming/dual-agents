@@ -10,6 +10,9 @@ def test_build_command_mentions_dual_trigger() -> None:
     assert "do not claim remote delivery from local success alone" in markdown.lower()
     assert "git log <target-branch> -1 --oneline" in markdown
     assert "remotely available, deployed, or notified" in markdown.lower()
+    assert "validate_review.py" in markdown
+    assert "lead-review.txt" in markdown
+    assert "final-review.txt" in markdown
 
 
 def test_build_agent_markdown_contains_expected_agents() -> None:
@@ -22,8 +25,13 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "never expose internal reasoning" in agents["dual-coordinator.md"].lower()
     assert "one row per requested brand" in agents["dual-coordinator.md"].lower()
     assert "validate_report.py" in agents["dual-coordinator.md"]
+    assert "validate_review.py" in agents["dual-coordinator.md"]
     assert "do not begin broad remediation in the same turn" in agents["dual-coordinator.md"].lower()
+    assert "before implementation starts on a new bounded unit" in agents["dual-coordinator.md"].lower()
     assert "--mode post-review" in agents["dual-coordinator.md"]
+    assert "next bounded unit may start" in agents["dual-coordinator.md"].lower()
+    assert "lead-review.txt" in agents["dual-coordinator.md"]
+    assert "final-review.txt" in agents["dual-coordinator.md"]
     assert "forum_adjudication" in agents["dual-coordinator.md"].lower()
     assert "--mode forum" in agents["dual-coordinator.md"]
     assert "subagent_type" in agents["dual-coordinator.md"]
