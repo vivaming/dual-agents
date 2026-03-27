@@ -14,10 +14,14 @@ def test_export_writes_expected_files(tmp_path: Path) -> None:
     assert (tmp_path / ".opencode" / "commands" / "dual.md").exists()
     assert (tmp_path / ".dual-agents" / "codex-review.txt").exists()
     assert (tmp_path / ".dual-agents" / "validate_report.py").exists()
+    assert (tmp_path / ".dual-agents" / "validate_review.py").exists()
     validator = (tmp_path / ".dual-agents" / "validate_report.py").read_text()
     assert "--mode" in validator
     assert "post-review" in validator
     assert "forum" in validator
+    review_validator = (tmp_path / ".dual-agents" / "validate_review.py").read_text()
+    assert "--review-file" in review_validator
+    assert "--require-delivery-proof" in review_validator
 
 
 def test_export_prunes_known_transient_opencode_runtime_files(tmp_path: Path) -> None:

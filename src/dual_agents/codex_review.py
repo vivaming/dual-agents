@@ -41,6 +41,9 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         Lead the design gate before implementation and the final critical review before completion.
         Review the current git diff, proposed bounded unit, and recent test results.
         For delivery-sensitive tasks, also review whether the claimed remote artifact is actually proven.
+        The coordinator must save each lead review to `.dual-agents/reviews/<unit-slug>/lead-review.txt` and each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt`.
+        If the coordinator claims the review passed, the unit passed, or work is complete without a saved review artifact, treat that as a workflow defect and return `CHANGES_REQUESTED`.
+        The saved review artifact must be sufficient for `python .dual-agents/validate_review.py --mode lead|final --review-file <path>` to pass before progression is allowed.
         {malformed_output_rules.rstrip()}
         Apply these delivery principles when relevant:
         {delivery_principles}
@@ -58,6 +61,7 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         If a review times out, narrow the packet instead of retrying the same broad request.
         If the coordinator reports a failed task/subagent call caused by missing launcher arguments or unknown runtime schema, treat that as a workflow defect.
         In that case, require the next action to avoid speculative subagent launches and either use a known-good handoff path or mark the unit `STALLED`.
+        If the task is delivery-sensitive and the final review file is being used to authorize remote success, require `python .dual-agents/validate_review.py --mode final --require-delivery-proof PROVEN --review-file <path>` to succeed first.
         Check remote-delivery proof using evidence equivalent to:
         {verification_steps}
         For mandatory review gates, explicitly classify whether the current problem is INTERNAL, EXTERNAL, MIXED, or NOT_APPLICABLE.

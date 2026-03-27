@@ -76,6 +76,15 @@ This writes:
 - `.opencode/agents/*.md`
 - `.opencode/commands/dual.md`
 - `.dual-agents/codex-review.txt`
+- `.dual-agents/validate_report.py`
+- `.dual-agents/validate_review.py`
+
+The generated workflow now requires saved review artifacts under `.dual-agents/reviews/<unit-slug>/`:
+
+- `lead-review.txt` for the design gate before implementation
+- `final-review.txt` for the critical review before any `PASS` or completion claim
+
+Validate those files with `.dual-agents/validate_review.py` before allowing progression or completion.
 
 For the forum-adjudication experiment and its evaluation metrics, see `docs/forum-adjudication-eval.md` and `docs/forum-replay-eval.md`.
 For the premium-review cost optimization experiment, see `docs/premium-token-eval.md`.
