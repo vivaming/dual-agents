@@ -1,10 +1,14 @@
 import pytest
+from pathlib import Path
 
 from dual_agents.controller import (
     BuilderVerdict,
+    CauseClassification,
     DecisionCategory,
     DeliveryProofStatus,
     HighRiskAction,
+    ProgressionDecision,
+    ReviewUnitStatus,
     ReviewVerdict,
     TaskType,
     WorkflowController,
@@ -32,11 +36,14 @@ from dual_agents.workflow import WorkflowStage
 
 VALID_REVIEW = """
 1. Verdict: APPROVED
-2. Blocking issues: None
-3. Non-blocking issues:
+2. Current unit status: PASS
+3. Blocking issues: None
+4. Non-blocking issues:
 - tighten naming
-4. Delivery proof status: NOT_PROVEN
-5. Suggested next action: Verify the remote artifact before completion.
+5. Cause classification: NOT_APPLICABLE
+6. Delivery proof status: NOT_PROVEN
+7. Next bounded unit may start: YES
+8. Suggested next action: Verify the remote artifact before completion.
 """
 
 VALID_BUILDER_RESULT = """
@@ -50,12 +57,31 @@ VALID_BUILDER_RESULT = """
 """
 
 
+def make_controller(**kwargs: object) -> WorkflowController:
+    return WorkflowController(require_review_artifacts=False, **kwargs)
+
+
+def write_review_artifact(
+    reviews_root: Path,
+    unit_slug: str,
+    filename: str,
+    contents: str,
+) -> Path:
+    artifact_path = reviews_root / unit_slug / filename
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    artifact_path.write_text(contents)
+    return artifact_path
+
+
 def test_parse_review_result_accepts_structured_output() -> None:
     result = parse_review_result(VALID_REVIEW)
     assert result.verdict == ReviewVerdict.APPROVED
+    assert result.current_unit_status == ReviewUnitStatus.PASS
     assert result.blocking_issues == ()
     assert result.non_blocking_issues == ("tighten naming",)
+    assert result.cause_classification == CauseClassification.NOT_APPLICABLE
     assert result.delivery_proof_status == DeliveryProofStatus.NOT_PROVEN
+    assert result.next_bounded_unit_may_start == ProgressionDecision.YES
 
 
 def test_parse_review_result_rejects_missing_field() -> None:
@@ -63,17 +89,33 @@ def test_parse_review_result_rejects_missing_field() -> None:
         parse_review_result("1. Verdict: APPROVED")
 
 
+def test_parse_review_result_rejects_self_review_format() -> None:
+    with pytest.raises(WorkflowViolation, match="self-review"):
+        parse_review_result(
+            """
+## Unit Status: APPROVED
+## Changes Summary
+- Added guard
+## Acceptance Criteria Met
+- yes
+"""
+        )
+
+
 def test_controller_routes_changes_requested_back_to_implementation() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.stage = WorkflowStage.CRITICAL_REVIEW
     review = controller.submit_review(
         """
 1. Verdict: CHANGES_REQUESTED
-2. Blocking issues:
+2. Current unit status: CHANGES_REQUIRED
+3. Blocking issues:
 - parser output malformed
-3. Non-blocking issues: None
-4. Delivery proof status: NOT_APPLICABLE
-5. Suggested next action: Fix the malformed output and rerun review.
+4. Non-blocking issues: None
+5. Cause classification: INTERNAL
+6. Delivery proof status: NOT_APPLICABLE
+7. Next bounded unit may start: NO
+8. Suggested next action: Fix the malformed output and rerun review.
 """
     )
     assert review.has_blocking_issues is True
@@ -81,7 +123,7 @@ def test_controller_routes_changes_requested_back_to_implementation() -> None:
 
 
 def test_delivery_sensitive_controller_requires_explicit_proof() -> None:
-    controller = WorkflowController(delivery_sensitive=True)
+    controller = make_controller(delivery_sensitive=True)
     controller.stage = WorkflowStage.ADJUDICATION
     assert controller.advance() == WorkflowStage.DELIVERY_VERIFICATION
     with pytest.raises(WorkflowViolation):
@@ -90,7 +132,7 @@ def test_delivery_sensitive_controller_requires_explicit_proof() -> None:
 
 
 def test_non_delivery_sensitive_controller_skips_delivery_stage() -> None:
-    controller = WorkflowController(delivery_sensitive=False)
+    controller = make_controller(delivery_sensitive=False)
     controller.stage = WorkflowStage.ADJUDICATION
     assert controller.advance() == WorkflowStage.DEPLOY_READY
 
@@ -109,16 +151,42 @@ def test_partial_status_requires_critical_review_even_for_ordinary_work() -> Non
     )
 
 
-def test_controller_blocks_epic_progress_when_review_is_required() -> None:
-    controller = WorkflowController()
+def test_controller_allows_epic_review_to_advance_to_implementation() -> None:
+    controller = make_controller()
     controller.stage = WorkflowStage.EPIC_REVIEW
-    controller.flag_decision_for_review(decision_category=DecisionCategory.NEW_TASKS)
-    with pytest.raises(WorkflowViolation):
-        controller.advance()
+    assert controller.advance() == WorkflowStage.IMPLEMENTATION
+
+
+def test_epic_review_result_can_start_implementation() -> None:
+    controller = make_controller()
+    controller.stage = WorkflowStage.EPIC_REVIEW
+    review = controller.submit_review(VALID_REVIEW)
+    assert review.may_start_next_unit is True
+    assert controller.stage == WorkflowStage.IMPLEMENTATION
+
+
+def test_epic_review_with_no_progression_loops_back_to_epic_draft() -> None:
+    controller = make_controller()
+    controller.stage = WorkflowStage.EPIC_REVIEW
+    review = controller.submit_review(
+        """
+1. Verdict: CHANGES_REQUESTED
+2. Current unit status: CHANGES_REQUIRED
+3. Blocking issues:
+- clarify acceptance criteria
+4. Non-blocking issues: None
+5. Cause classification: INTERNAL
+6. Delivery proof status: NOT_APPLICABLE
+7. Next bounded unit may start: NO
+8. Suggested next action: Narrow the unit and rerun lead review.
+"""
+    )
+    assert review.may_start_next_unit is False
+    assert controller.stage == WorkflowStage.EPIC_DRAFT
 
 
 def test_controller_clears_review_requirement_after_valid_review() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.flag_decision_for_review(decision_category=DecisionCategory.NEW_TASKS)
     controller.stage = WorkflowStage.CRITICAL_REVIEW
     controller.submit_review(VALID_REVIEW)
@@ -133,7 +201,7 @@ def test_parse_builder_result_accepts_structured_output() -> None:
 
 
 def test_controller_blocks_advancing_while_builder_handoff_is_active() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.stage = WorkflowStage.IMPLEMENTATION
     controller.start_builder_handoff("Fix syntax in extraction script.", task_types=(TaskType.SCRIPT_FIX,))
     with pytest.raises(WorkflowViolation):
@@ -141,7 +209,7 @@ def test_controller_blocks_advancing_while_builder_handoff_is_active() -> None:
 
 
 def test_controller_accepts_valid_builder_result_and_clears_handoff() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.stage = WorkflowStage.IMPLEMENTATION
     controller.start_builder_handoff("Fix syntax in extraction script.", task_types=(TaskType.SCRIPT_FIX,))
     result = controller.submit_builder_result(VALID_BUILDER_RESULT)
@@ -150,7 +218,7 @@ def test_controller_accepts_valid_builder_result_and_clears_handoff() -> None:
 
 
 def test_controller_marks_builder_stalled_and_requires_recovery() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.stage = WorkflowStage.IMPLEMENTATION
     controller.start_builder_handoff("Fix syntax in extraction script.", task_types=(TaskType.SCRIPT_FIX,))
     with pytest.raises(WorkflowViolation):
@@ -205,7 +273,7 @@ def test_validate_worktree_requirement_accepts_linked_worktree() -> None:
 
 
 def test_builder_handoff_requires_exactly_one_task_type() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.stage = WorkflowStage.IMPLEMENTATION
     with pytest.raises(WorkflowViolation):
         controller.start_builder_handoff(
@@ -215,7 +283,7 @@ def test_builder_handoff_requires_exactly_one_task_type() -> None:
 
 
 def test_high_risk_actions_require_explicit_review_before_builder_execution() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.stage = WorkflowStage.IMPLEMENTATION
     with pytest.raises(WorkflowViolation):
         controller.start_builder_handoff(
@@ -226,7 +294,7 @@ def test_high_risk_actions_require_explicit_review_before_builder_execution() ->
 
 
 def test_empty_builder_output_is_converted_to_stalled_result() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.stage = WorkflowStage.IMPLEMENTATION
     controller.start_builder_handoff("Create HTML.", task_types=(TaskType.BUILD_RENDER,))
     result = controller.submit_builder_result("   ")
@@ -316,7 +384,7 @@ def test_validate_analysis_recovery_step_rejects_task_switching() -> None:
 
 
 def test_controller_blocks_new_task_when_analysis_hard_stop_is_active() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.stage = WorkflowStage.IMPLEMENTATION
     controller.hard_stop_analysis_failure(
         "Traceback (most recent call last):\nAttributeError: 'str' object has no attribute 'get'",
@@ -327,7 +395,7 @@ def test_controller_blocks_new_task_when_analysis_hard_stop_is_active() -> None:
 
 
 def test_controller_clears_analysis_hard_stop_only_after_valid_recovery_step() -> None:
-    controller = WorkflowController()
+    controller = make_controller()
     controller.stage = WorkflowStage.IMPLEMENTATION
     controller.hard_stop_analysis_failure(
         "Traceback (most recent call last):\nJSONDecodeError: bad",

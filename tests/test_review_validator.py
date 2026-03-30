@@ -104,3 +104,27 @@ def test_review_validator_enforces_delivery_proof_requirement(tmp_path: Path) ->
 
     assert result.returncode == 1
     assert "expected PROVEN" in result.stderr
+
+
+def test_review_validator_rejects_self_review_markers(tmp_path: Path) -> None:
+    validator_path = _write_validator(tmp_path)
+    review_path = tmp_path / "final-review.txt"
+    review_path.write_text(
+        """
+## Unit Status: APPROVED
+## Changes Summary
+- Added a guard
+## Acceptance Criteria Met
+- yes
+"""
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(validator_path), "--mode", "final", "--review-file", str(review_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "self-review" in result.stderr
