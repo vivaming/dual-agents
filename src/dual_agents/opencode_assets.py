@@ -11,13 +11,15 @@ def build_command_markdown(config: WorkflowConfig) -> str:
     verification_steps = "\n".join(f"- `{command}`" for command in config.delivery_verification_commands)
     delivery_principles = "\n".join(f"- {principle}" for principle in config.delivery_principles)
     review_storage_rules = (
-        "Save each lead review to `.dual-agents/reviews/<unit-slug>/lead-review.txt`.\n"
         "Save each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt`.\n"
-        "Before implementation starts, validate the saved lead review with "
-        "`python .dual-agents/validate_review.py --mode lead --review-file .dual-agents/reviews/<unit-slug>/lead-review.txt`.\n"
+        "HARD GATE: After each bounded unit implementation and self-review, run "
+        "`dual-agents review-gate --unit-slug <unit-slug> --mode final --request-file <path> --repo-root <repo>`.\n"
+        "If that command has not run successfully for the current unit, the unit is not complete and the next bounded unit may not start.\n"
         "Before claiming review pass, unit pass, or final completion, validate the saved final review with "
         "`python .dual-agents/validate_review.py --mode final --review-file .dual-agents/reviews/<unit-slug>/final-review.txt`.\n"
         "If the task is delivery-sensitive, require `--require-delivery-proof PROVEN` before remote-success claims.\n"
+        "Before writing any completion summary, run `dual-agents pre-completion-audit --repo-root <repo>` and stop if it fails.\n"
+        "If a bounded unit goes artifact-silent, run `dual-agents watchdog-check` and accept `STALLED` when the watchdog forces it.\n"
     )
     forum_rules = ""
     if config.forum_adjudication_enabled:
@@ -34,9 +36,13 @@ def build_command_markdown(config: WorkflowConfig) -> str:
 
         Use the `/dual` command to run the dual-agent workflow.
         Treat `{trigger}` as an alias for this command.
-        Start every new bounded unit with a Codex lead-review design gate before implementation begins.
         Use `{config.builder.name}` for implementation.
-        After implementation, call the local Codex CLI review worker for a final critical review and loop until blocking issues are resolved.
+        Start each bounded unit with implementation, not a mandatory pre-implementation review.
+        Use Codex for a design review before implementation only when the user explicitly asks for that.
+        After implementation, call the local Codex CLI review worker for a final critical review.
+        Treat every `CHANGES_REQUESTED` verdict as an instruction to remediate the captured issue cluster and rerun review, not as optional advice.
+        Continue review/fix cycles on that same bounded unit until blocking issues are cleared or the 5-round loop budget for that issue cluster is exhausted, then pause and wait for user instruction.
+        Accept final review gates only from the saved artifact path for the current bounded unit, never from copied review text or memory.
         Do not claim remote delivery from local success alone.
         {review_storage_rules.rstrip()}
         For delivery-sensitive tasks, apply these rules:
@@ -118,12 +124,23 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             You are the coordinator. Use `{config.builder.name}` for implementation.
             The reviewer runs through local Codex CLI, not as an OpenCode agent.
             Bound the current unit before acting and identify the artifact that proves its status.
-            Before implementation starts on a new bounded unit, run a Codex lead-review design gate and do not proceed unless the reviewer explicitly says the next bounded unit may start: YES.
-            Save each lead review to `.dual-agents/reviews/<unit-slug>/lead-review.txt` and validate it with `python .dual-agents/validate_review.py --mode lead --review-file .dual-agents/reviews/<unit-slug>/lead-review.txt` before implementation starts.
+            In controller terms, start each task with `begin_new_bounded_unit(<unit-slug>)`, hand one bounded implementation task to `{config.builder.name}`, and use `submit_saved_review()` only for saved review artifacts.
+            Do not run a lead/design review before implementation unless the user explicitly asks for one.
+            Do not let the conversation drift into reviewing the whole epic when the current task should be implemented.
+            After any final review that approves the current unit, stop at that task boundary and only then begin the next bounded unit.
+            Never roll directly from `Task N` unfinished review/fix loop into `Task N+1` implementation.
+            HARD GATE: After each bounded unit implementation and self-review, you must run `dual-agents review-gate --unit-slug <unit-slug> --mode final --request-file <path> --repo-root <repo>`.
+            If that command has not run successfully for the current unit, the unit is not complete, the next bounded unit may not start, and you may not present a completion summary.
+            Accept a review result only from `.dual-agents/reviews/<unit-slug>/final-review.txt` for the current bounded unit, not from pasted text, memory, or a different task's artifact.
             Save each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt` and validate it with `python .dual-agents/validate_review.py --mode final --review-file .dual-agents/reviews/<unit-slug>/final-review.txt` before any claim that review passed, the unit passed, or the task is complete.
+            Before any completion summary, run `dual-agents pre-completion-audit --repo-root <repo>` and stop if it reports a missing or invalid final review artifact.
             If the task is delivery-sensitive, require `--require-delivery-proof PROVEN` on that final validation before any remote-success claim.
             If the saved review artifact is missing, malformed, or fails validation, classify the unit as `STALLED` instead of summarizing the review from memory.
-            Keep looping until blocking issues are resolved.
+            Use `dual-agents heartbeat` only for bounded active work; use `dual-agents watchdog-check` when progress goes quiet and `dual-agents stop-unit` for explicit recovery.
+            Keep looping until blocking issues are resolved or the fix/review loop reaches 5 rounds, then pause and wait for user instruction.
+            Treat every blocking issue named by Codex as required follow-up work for the current bounded unit unless a later Codex review explicitly clears it.
+            Do not drop unresolved review findings, mark them as implicitly accepted, or move to a later task while the current issue cluster still has blocking findings.
+            Run no more than 5 review/fix rounds per issue cluster before pausing for the user.
             Do not report remote success unless the remote artifact exists.
             Treat local completion, remote availability, deployment, and notification as separate checkpoints when relevant.
             {output_hygiene_rules.rstrip()}

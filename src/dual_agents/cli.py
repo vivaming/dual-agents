@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,7 +11,20 @@ import typer
 
 from dual_agents.codex_review import build_review_command, build_review_prompt
 from dual_agents.config import AgentConfig, ProviderConfig, ReviewerConfig, WorkflowConfig
+from dual_agents.controller import DeliveryProofStatus, ReviewGateMode, WorkflowController, WorkflowStage, parse_review_result, validate_review_result
 from dual_agents.opencode_assets import build_agent_markdown, build_command_markdown, build_opencode_config
+from dual_agents.state import (
+    RunState,
+    apply_run_state,
+    build_bounded_unit_state,
+    default_state_path,
+    load_run_state,
+    mark_heartbeat,
+    mark_progress,
+    mark_stalled,
+    save_run_state,
+)
+from dual_agents.watchdog import WatchdogStatus, evaluate_watchdog
 
 app = typer.Typer(help="CLI for the dual-agent workflow.", no_args_is_help=True)
 TRANSIENT_OPCODE_PATHS = (
@@ -158,6 +172,11 @@ VALID_STATUSES = {"NOT_STARTED", "IN_PROGRESS", "PASS", "PASS_WITH_EXCEPTION", "
 VALID_CAUSES = {"INTERNAL", "EXTERNAL", "MIXED", "NOT_APPLICABLE"}
 VALID_DELIVERY = {"PROVEN", "NOT_PROVEN", "NOT_APPLICABLE"}
 VALID_PROGRESS = {"YES", "NO"}
+SELF_REVIEW_MARKERS = (
+    re.compile(r"^\\s*##\\s+Unit Status:", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\\s*##\\s+Changes Summary\\b", re.IGNORECASE | re.MULTILINE),
+    re.compile(r"^\\s*##\\s+Acceptance Criteria Met\\b", re.IGNORECASE | re.MULTILINE),
+)
 
 FIELD_PATTERNS = {
     "verdict": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Verdict:\\s*(.+?)\\s*$", re.IGNORECASE),
@@ -183,6 +202,10 @@ def _normalize_issues(raw_value: str, continuation_lines: list[str]) -> tuple[st
 
 
 def parse_review(raw_review: str) -> dict[str, object]:
+    for marker in SELF_REVIEW_MARKERS:
+        if marker.search(raw_review):
+            raise ValueError("Review artifact appears to be a self-review, not a Codex review.")
+
     captured: dict[str, str] = {}
     continuations: dict[str, list[str]] = {"blocking_issues": [], "non_blocking_issues": []}
     active_multiline_field: str | None = None
@@ -314,7 +337,7 @@ if __name__ == "__main__":
 def default_workflow_config() -> WorkflowConfig:
     glm_provider = ProviderConfig(
         name="glm",
-        model="glm-4-turbo",
+        model="glm-5.1",
         base_url="https://api.z.ai/api/coding/paas/v4/",
         api_key_env="GLM_API_KEY",
     )
@@ -375,6 +398,90 @@ def _export_assets(output_dir: Path) -> None:
     (prompts_dir / "codex-review.txt").write_text(build_review_prompt(config) + "\n")
     (prompts_dir / "validate_report.py").write_text(build_report_validator_script())
     (prompts_dir / "validate_review.py").write_text(build_review_validator_script())
+
+
+def _artifact_filename_for_mode(mode: ReviewGateMode) -> str:
+    if mode == ReviewGateMode.LEAD:
+        return "lead-review.txt"
+    if mode == ReviewGateMode.FINAL:
+        return "final-review.txt"
+    raise ValueError(f"Unsupported review gate mode for artifact persistence: {mode.value}")
+
+
+def _run_codex_review(*, config: WorkflowConfig, review_request: str, cwd: Path) -> str:
+    prompt = build_review_prompt(config) + "\n\n" + review_request.strip() + "\n"
+    command = [*config.reviewer.command, prompt]
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip() or result.stdout.strip() or "codex review command failed."
+        raise typer.BadParameter(f"Codex review failed: {stderr}")
+    output = result.stdout.strip()
+    if not output:
+        raise typer.BadParameter("Codex review returned empty output.")
+    return output
+
+
+def _normalize_review_request(review_request: str, *, mode: ReviewGateMode) -> str:
+    normalized = review_request.strip()
+    if mode == ReviewGateMode.LEAD:
+        preamble = (
+            "REVIEW MODE: LEAD\n"
+            "This is a PRE-IMPLEMENTATION design gate for exactly one bounded unit.\n"
+            "The unit is expected to be not yet implemented.\n"
+            "Judge whether the proposed implementation plan is concrete and safe to start.\n"
+            "Do not request completed code, test results, or a passing diff merely because implementation has not begun.\n"
+        )
+        return preamble + "\n" + normalized
+    if mode == ReviewGateMode.FINAL:
+        preamble = (
+            "REVIEW MODE: FINAL\n"
+            "This is a POST-IMPLEMENTATION critical review for exactly one bounded unit.\n"
+            "Judge the produced code, evidence, and verification results for that unit.\n"
+        )
+        return preamble + "\n" + normalized
+    return normalized
+
+
+def _load_controller_from_state(
+    *,
+    repo_root: Path,
+    delivery_sensitive: bool,
+) -> tuple[WorkflowController, RunState, Path]:
+    reviews_root = repo_root / ".dual-agents" / "reviews"
+    state_path = default_state_path(repo_root)
+    run_state = load_run_state(state_path)
+    controller = WorkflowController(
+        delivery_sensitive=delivery_sensitive,
+        reviews_root=reviews_root,
+    )
+    apply_run_state(controller, run_state)
+    return controller, run_state, state_path
+
+
+def _validate_saved_final_review(
+    review_path: Path,
+    *,
+    require_delivery_proof: DeliveryProofStatus | None = None,
+) -> dict[str, str]:
+    raw_review = review_path.read_text()
+    review_result = parse_review_result(raw_review)
+    validate_review_result(
+        review_result,
+        mode=ReviewGateMode.FINAL,
+        require_delivery_proof=require_delivery_proof,
+    )
+    return {
+        "unit_slug": review_path.parent.name,
+        "artifact_path": str(review_path),
+        "current_unit_status": review_result.current_unit_status.value,
+        "next_bounded_unit_may_start": review_result.next_bounded_unit_may_start.value,
+    }
 
 
 @app.callback()
@@ -446,6 +553,276 @@ def init_target(
     typer.echo("1. Start a fresh OpenCode session in the target repo.")
     typer.echo("2. Commit .opencode/ and .dual-agents/ in the target repo.")
     typer.echo("3. Use `/dual` or the configured trigger phrase in that repo.")
+
+
+@app.command("start-unit")
+def start_unit(
+    unit_slug: str = typer.Option(..., help="Bounded unit slug, e.g. task-01-query-map."),
+    repo_root: Path = typer.Option(Path("."), dir_okay=True, file_okay=False, resolve_path=True, help="Target repo root."),
+    delivery_sensitive: bool = typer.Option(False, help="Require delivery-sensitive handling for this unit."),
+) -> None:
+    repo_root = repo_root.resolve()
+    controller, run_state, state_path = _load_controller_from_state(
+        repo_root=repo_root,
+        delivery_sensitive=delivery_sensitive,
+    )
+    controller.begin_new_bounded_unit(unit_slug)
+    controller.stage = WorkflowStage.EPIC_REVIEW
+    run_state.current_unit = build_bounded_unit_state(controller)
+    save_run_state(state_path, run_state)
+    typer.echo(
+        json.dumps(
+            {
+                "unit_slug": unit_slug,
+                "stage": controller.stage.value,
+                "state_path": str(state_path),
+                "expected_lead_review_path": run_state.current_unit.expected_lead_review_path,
+                "expected_final_review_path": run_state.current_unit.expected_final_review_path,
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command("review-gate")
+def review_gate(
+    unit_slug: str = typer.Option(..., help="Bounded unit slug, e.g. task-01-query-map."),
+    mode: ReviewGateMode = typer.Option(..., case_sensitive=False, help="Review gate mode: lead or final."),
+    request_file: Path = typer.Option(..., exists=True, dir_okay=False, readable=True, help="File containing the bounded review request packet."),
+    repo_root: Path = typer.Option(Path("."), dir_okay=True, file_okay=False, resolve_path=True, help="Target repo root."),
+    delivery_sensitive: bool = typer.Option(False, help="Require delivery-sensitive final review handling."),
+    require_delivery_proof: DeliveryProofStatus | None = typer.Option(None, case_sensitive=False, help="Require specific delivery proof status for final reviews."),
+) -> None:
+    if mode == ReviewGateMode.GENERIC:
+        raise typer.BadParameter("review-gate only supports lead or final modes.")
+
+    config = default_workflow_config()
+    repo_root = repo_root.resolve()
+    review_request = request_file.read_text().strip()
+    if not review_request:
+        raise typer.BadParameter("Review request file must not be empty.")
+    review_request = _normalize_review_request(review_request, mode=mode)
+
+    controller, run_state, state_path = _load_controller_from_state(
+        repo_root=repo_root,
+        delivery_sensitive=delivery_sensitive,
+    )
+    if mode == ReviewGateMode.LEAD:
+        controller.begin_new_bounded_unit(unit_slug)
+        controller.stage = WorkflowStage.EPIC_REVIEW
+    else:
+        if run_state.current_unit and run_state.current_unit.unit_slug != unit_slug:
+            raise typer.BadParameter(
+                f"Run-state current unit is {run_state.current_unit.unit_slug}, not {unit_slug}."
+            )
+        controller.current_unit_slug = unit_slug.strip()
+        controller.stage = WorkflowStage.CRITICAL_REVIEW
+
+    artifact_path = controller.expected_review_artifact_path()
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+
+    review_output = _run_codex_review(config=config, review_request=review_request, cwd=repo_root)
+    artifact_path.write_text(review_output + "\n")
+
+    review_result = parse_review_result(review_output)
+    validate_review_result(
+        review_result,
+        mode=mode,
+        require_delivery_proof=require_delivery_proof,
+    )
+    controller.submit_saved_review()
+    run_state.current_unit = build_bounded_unit_state(controller)
+    run_state.current_unit = mark_progress(
+        run_state.current_unit,
+        open_blocking_issues=list(review_result.blocking_issues),
+    )
+    save_run_state(state_path, run_state)
+
+    typer.echo(
+        json.dumps(
+            {
+                "unit_slug": unit_slug,
+                "mode": mode.value,
+                "artifact_path": str(artifact_path),
+                "state_path": str(state_path),
+                "stage": controller.stage.value,
+                "current_unit_status": review_result.current_unit_status.value,
+                "next_bounded_unit_may_start": review_result.next_bounded_unit_may_start.value,
+                "suggested_next_action": review_result.suggested_next_action,
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command("pre-completion-audit")
+def pre_completion_audit(
+    repo_root: Path = typer.Option(Path("."), dir_okay=True, file_okay=False, resolve_path=True, help="Target repo root."),
+    require_delivery_proof: DeliveryProofStatus | None = typer.Option(None, case_sensitive=False, help="Require specific delivery proof status for audited final reviews."),
+) -> None:
+    repo_root = repo_root.resolve()
+    reviews_root = repo_root / ".dual-agents" / "reviews"
+    state_path = default_state_path(repo_root)
+    run_state = load_run_state(state_path)
+
+    failures: list[dict[str, str]] = []
+    audited: list[dict[str, str]] = []
+
+    final_review_paths = sorted(reviews_root.glob("*/final-review.txt"))
+    for review_path in final_review_paths:
+        try:
+            audited.append(
+                _validate_saved_final_review(
+                    review_path,
+                    require_delivery_proof=require_delivery_proof,
+                )
+            )
+        except Exception as exc:
+            failures.append(
+                {
+                    "unit_slug": review_path.parent.name,
+                    "artifact_path": str(review_path),
+                    "error": str(exc),
+                }
+            )
+
+    if run_state.current_unit is not None:
+        expected_final = Path(run_state.current_unit.expected_final_review_path)
+        if not expected_final.exists():
+            failures.append(
+                {
+                    "unit_slug": run_state.current_unit.unit_slug,
+                    "artifact_path": str(expected_final),
+                    "error": "Current run-state unit is missing final-review.txt.",
+                }
+            )
+        elif not any(item["artifact_path"] == str(expected_final) for item in audited):
+            try:
+                audited.append(
+                    _validate_saved_final_review(
+                        expected_final,
+                        require_delivery_proof=require_delivery_proof,
+                    )
+                )
+            except Exception as exc:
+                failures.append(
+                    {
+                        "unit_slug": run_state.current_unit.unit_slug,
+                        "artifact_path": str(expected_final),
+                        "error": str(exc),
+                    }
+                )
+
+    if not audited:
+        failures.append(
+            {
+                "unit_slug": "",
+                "artifact_path": str(reviews_root),
+                "error": "No final review artifacts found to audit.",
+            }
+        )
+
+    payload = {
+        "repo_root": str(repo_root),
+        "state_path": str(state_path),
+        "audited_units": audited,
+        "failures": failures,
+    }
+    typer.echo(json.dumps(payload, indent=2))
+    if failures:
+        raise typer.Exit(code=1)
+
+
+@app.command("heartbeat")
+def heartbeat(
+    unit_slug: str = typer.Option(..., help="Bounded unit slug that should already be active."),
+    repo_root: Path = typer.Option(Path("."), dir_okay=True, file_okay=False, resolve_path=True, help="Target repo root."),
+    note: str | None = typer.Option(None, help="Short note explaining why the unit is still active."),
+) -> None:
+    repo_root = repo_root.resolve()
+    run_state = load_run_state(default_state_path(repo_root))
+    if run_state.current_unit is None:
+        raise typer.BadParameter("No active bounded unit in run-state.")
+    if run_state.current_unit.unit_slug != unit_slug:
+        raise typer.BadParameter(f"Run-state current unit is {run_state.current_unit.unit_slug}, not {unit_slug}.")
+
+    run_state.current_unit = mark_heartbeat(run_state.current_unit, note=note)
+    save_run_state(default_state_path(repo_root), run_state)
+    typer.echo(
+        json.dumps(
+            {
+                "unit_slug": unit_slug,
+                "stage": run_state.current_unit.stage.value,
+                "state_path": str(default_state_path(repo_root)),
+                "last_heartbeat_at": run_state.current_unit.last_heartbeat_at,
+                "note": run_state.current_unit.last_watchdog_warning,
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command("watchdog-check")
+def watchdog_check(
+    repo_root: Path = typer.Option(Path("."), dir_okay=True, file_okay=False, resolve_path=True, help="Target repo root."),
+) -> None:
+    repo_root = repo_root.resolve()
+    state_path = default_state_path(repo_root)
+    run_state = load_run_state(state_path)
+    decision = evaluate_watchdog(run_state)
+
+    if run_state.current_unit is not None:
+        if decision.status == WatchdogStatus.WARN:
+            run_state.current_unit = run_state.current_unit.model_copy(
+                update={"last_watchdog_warning": decision.reason}
+            )
+            save_run_state(state_path, run_state)
+        elif decision.status == WatchdogStatus.STALLED:
+            run_state.current_unit = mark_stalled(run_state.current_unit, reason=decision.reason)
+            save_run_state(state_path, run_state)
+
+    typer.echo(
+        json.dumps(
+            {
+                "status": decision.status.value,
+                "reason": decision.reason,
+                "idle_seconds": decision.idle_seconds,
+                "expected_artifacts_missing": list(decision.expected_artifacts_missing),
+                "next_action": decision.next_action,
+                "state_path": str(state_path),
+            },
+            indent=2,
+        )
+    )
+
+
+@app.command("stop-unit")
+def stop_unit(
+    unit_slug: str = typer.Option(..., help="Bounded unit slug that should be stopped."),
+    repo_root: Path = typer.Option(Path("."), dir_okay=True, file_okay=False, resolve_path=True, help="Target repo root."),
+    reason: str = typer.Option(..., help="Why the bounded unit is being stopped."),
+) -> None:
+    repo_root = repo_root.resolve()
+    state_path = default_state_path(repo_root)
+    run_state = load_run_state(state_path)
+    if run_state.current_unit is None:
+        raise typer.BadParameter("No active bounded unit in run-state.")
+    if run_state.current_unit.unit_slug != unit_slug:
+        raise typer.BadParameter(f"Run-state current unit is {run_state.current_unit.unit_slug}, not {unit_slug}.")
+
+    run_state.current_unit = mark_stalled(run_state.current_unit, reason=reason)
+    save_run_state(state_path, run_state)
+    typer.echo(
+        json.dumps(
+            {
+                "unit_slug": unit_slug,
+                "stage": run_state.current_unit.stage.value,
+                "last_stop_reason": run_state.current_unit.last_stop_reason,
+                "state_path": str(state_path),
+            },
+            indent=2,
+        )
+    )
 
 
 def main() -> None:
