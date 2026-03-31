@@ -15,6 +15,7 @@ class StopCategory(str, Enum):
     OUTPUT_CORRUPTION = "OUTPUT_CORRUPTION"
     DATA_SHAPE_MISMATCH = "DATA_SHAPE_MISMATCH"
     CAPABILITY_MISMATCH = "CAPABILITY_MISMATCH"
+    BACKGROUND_SERVICE = "BACKGROUND_SERVICE"
     SESSION_DEGRADATION = "SESSION_DEGRADATION"
     UNKNOWN = "UNKNOWN"
 
@@ -66,6 +67,16 @@ STOP_PATTERN_MAP: dict[StopCategory, tuple[re.Pattern[str], ...]] = {
         re.compile(r"browser or app may not be secure", re.IGNORECASE),
         re.compile(r"couldn't sign you in", re.IGNORECASE),
     ),
+    StopCategory.BACKGROUND_SERVICE: (
+        re.compile(r"python\s+-m\s+http\.server\b", re.IGNORECASE),
+        re.compile(r"\b(?:npm|pnpm|yarn)\s+run\s+dev\b", re.IGNORECASE),
+        re.compile(r"\buvicorn\b", re.IGNORECASE),
+        re.compile(r"\bgunicorn\b", re.IGNORECASE),
+        re.compile(r"\bflask\s+run\b", re.IGNORECASE),
+        re.compile(r"\bnext\s+dev\b", re.IGNORECASE),
+        re.compile(r"\bvite\b", re.IGNORECASE),
+        re.compile(r"^\$\s+.+\s&\s*$", re.IGNORECASE | re.MULTILINE),
+    ),
 }
 
 
@@ -115,6 +126,10 @@ def _recovery_for(category: StopCategory) -> tuple[str, bool]:
         ),
         StopCategory.CAPABILITY_MISMATCH: (
             "Use a capability that the current runtime actually supports, or switch to a manual/alternate path without looping.",
+            False,
+        ),
+        StopCategory.BACKGROUND_SERVICE: (
+            "Treat the service launch as complete once the listening port is confirmed, report the local URL, and detach stdout/stderr instead of continuing to monitor the server process.",
             False,
         ),
         StopCategory.SESSION_DEGRADATION: (

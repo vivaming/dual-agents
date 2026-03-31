@@ -38,6 +38,12 @@ def test_classify_stop_timeout() -> None:
     assert signal.requires_fresh_session is True
 
 
+def test_classify_stop_background_service() -> None:
+    signal = classify_stop("$ python -m http.server 8000 --directory . &")
+    assert signal.category == StopCategory.BACKGROUND_SERVICE
+    assert signal.requires_fresh_session is False
+
+
 def test_classify_stop_tool_schema_error() -> None:
     signal = classify_stop("Error: expected string, received undefined path subagent_type")
     assert signal.category == StopCategory.TOOL_SCHEMA_ERROR

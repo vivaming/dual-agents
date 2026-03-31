@@ -211,6 +211,15 @@ def test_explain_stop_classifies_timeout(tmp_path: Path) -> None:
     assert "Stop signal: STREAM_TIMEOUT" in result.stdout
 
 
+def test_explain_stop_reports_background_service(tmp_path: Path) -> None:
+    transcript = tmp_path / "stop.txt"
+    transcript.write_text("$ python -m http.server 8000 --directory . &\n")
+    result = CliRunner().invoke(app, ["explain-stop", "--transcript-file", str(transcript)])
+    assert result.exit_code == 0
+    assert "Stop signal: BACKGROUND_SERVICE" in result.stdout
+    assert "local URL" in result.stdout
+
+
 def test_analyze_completeness_prints_schema_contract() -> None:
     result = CliRunner().invoke(app, ["analyze-completeness", "--describe-schema", "--data-root", "."])
     assert result.exit_code == 0
