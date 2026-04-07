@@ -21,6 +21,8 @@ def test_build_command_mentions_dual_trigger() -> None:
     assert "validate_review.py" in markdown
     assert "final-review.txt" in markdown
     assert "submit-review-artifact" in markdown
+    assert "previously produced by codex cli" in markdown.lower()
+    assert "never use `submit-review-artifact` for a coordinator-authored" in markdown.lower()
     assert "watchdog-check" in markdown
     assert "hard gate" in markdown.lower()
     assert "pre-completion-audit" in markdown
@@ -48,6 +50,7 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "submit_saved_review()" in agents["dual-coordinator.md"]
     assert "never roll directly from `task n` unfinished review/fix loop into `task n+1`" in agents["dual-coordinator.md"].lower()
     assert "accept a review result only from `.dual-agents/reviews/<unit-slug>/final-review.txt`" in agents["dual-coordinator.md"].lower()
+    assert "or a review that you wrote yourself" in agents["dual-coordinator.md"].lower()
     assert "do not drop unresolved review findings" in agents["dual-coordinator.md"].lower()
     assert "run no more than 5 review/fix rounds per issue cluster before pausing for the user" in agents["dual-coordinator.md"].lower()
     assert "next bounded unit may start" in agents["dual-coordinator.md"].lower()
@@ -61,6 +64,7 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "heartbeat" in agents["dual-coordinator.md"].lower()
     assert "stop-unit" in agents["dual-coordinator.md"].lower()
     assert "submit-review-artifact" in agents["dual-coordinator.md"]
+    assert "never author a review file yourself and then feed it to `dual-agents submit-review-artifact`" in agents["dual-coordinator.md"].lower()
     assert "pre-completion-audit" in agents["dual-coordinator.md"]
     assert "hard gate" in agents["dual-coordinator.md"].lower()
     assert "return `stalled`" in agents["glm-builder.md"].lower()

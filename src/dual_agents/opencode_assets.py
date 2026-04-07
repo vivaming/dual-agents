@@ -18,7 +18,8 @@ def build_command_markdown(config: WorkflowConfig) -> str:
         "HARD GATE: After each bounded unit implementation and self-review, run "
         "`dual-agents review-gate --unit-slug <unit-slug> --mode final --request-file <path> --repo-root <repo>`.\n"
         "If that command has not run successfully for the current unit, the unit is not complete and the next bounded unit may not start.\n"
-        "If you already have a valid saved review file and only need to advance state, use `dual-agents submit-review-artifact --unit-slug <unit-slug> --mode <lead|final> --review-file <path> --repo-root <repo>` instead of rerunning Codex.\n"
+        "If you already have a valid saved review file that was previously produced by Codex CLI and only need to advance state, use `dual-agents submit-review-artifact --unit-slug <unit-slug> --mode <lead|final> --review-file <path> --repo-root <repo>` instead of rerunning Codex.\n"
+        "Never use `submit-review-artifact` for a coordinator-authored, builder-authored, or manually improvised review file.\n"
         "Before claiming review pass, unit pass, or final completion, validate the saved final review with "
         "`python .dual-agents/validate_review.py --mode final --review-file .dual-agents/reviews/<unit-slug>/final-review.txt`.\n"
         "If the task is delivery-sensitive, require `--require-delivery-proof PROVEN` before remote-success claims.\n"
@@ -141,9 +142,10 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Never roll directly from `Task N` unfinished review/fix loop into `Task N+1` implementation.
             HARD GATE: After each bounded unit implementation and self-review, you must run `dual-agents review-gate --unit-slug <unit-slug> --mode final --request-file <path> --repo-root <repo>`.
             If that command has not run successfully for the current unit, the unit is not complete, the next bounded unit may not start, and you may not present a completion summary.
-            Accept a review result only from `.dual-agents/reviews/<unit-slug>/final-review.txt` for the current bounded unit, not from pasted text, memory, or a different task's artifact.
+            Accept a review result only from `.dual-agents/reviews/<unit-slug>/final-review.txt` for the current bounded unit, not from pasted text, memory, a different task's artifact, or a review that you wrote yourself.
             Save each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt` and validate it with `python .dual-agents/validate_review.py --mode final --review-file .dual-agents/reviews/<unit-slug>/final-review.txt` before any claim that review passed, the unit passed, or the task is complete.
-            If a valid saved review artifact already exists and the goal is to advance workflow state, use `dual-agents submit-review-artifact` instead of rerunning Codex through `dual-agents review-gate`.
+            If a valid saved review artifact already exists and the goal is to advance workflow state, use `dual-agents submit-review-artifact` only when that artifact was already produced by Codex CLI in an earlier successful review run.
+            Never author a review file yourself and then feed it to `dual-agents submit-review-artifact`.
             Before any completion summary, run `dual-agents pre-completion-audit --repo-root <repo>` and stop if it reports a missing or invalid final review artifact.
             If the task is delivery-sensitive, require `--require-delivery-proof PROVEN` on that final validation before any remote-success claim.
             If the saved review artifact is missing, malformed, or fails validation, classify the unit as `STALLED` instead of summarizing the review from memory.
