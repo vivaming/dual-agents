@@ -50,6 +50,33 @@ def test_review_validator_accepts_valid_lead_review(tmp_path: Path) -> None:
     assert result.stdout.strip() == "OK"
 
 
+def test_review_validator_accepts_issue_headers_without_colons(tmp_path: Path) -> None:
+    validator_path = _write_validator(tmp_path)
+    review_path = tmp_path / "final-review.txt"
+    review_path.write_text(
+        """
+1. Verdict: APPROVED
+2. Current unit status: PASS
+3. Blocking issues
+4. Non-blocking issues
+5. Cause classification: NOT_APPLICABLE
+6. Delivery proof status: PROVEN
+7. Next bounded unit may start: YES
+8. Suggested next action: Close the unit and move to the next bounded task.
+"""
+    )
+
+    result = subprocess.run(
+        [sys.executable, str(validator_path), "--mode", "final", "--review-file", str(review_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == "OK"
+
+
 def test_review_validator_rejects_missing_review_file(tmp_path: Path) -> None:
     validator_path = _write_validator(tmp_path)
     review_path = tmp_path / "missing-final-review.txt"

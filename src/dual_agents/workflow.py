@@ -13,14 +13,15 @@ class WorkflowStage(str, Enum):
     ADJUDICATION = "adjudication"
     FORUM_ADJUDICATION = "forum_adjudication"
     DELIVERY_VERIFICATION = "delivery_verification"
+    STALLED = "stalled"
     DEPLOY_READY = "deploy_ready"
 
 
 def next_stage(stage: WorkflowStage, has_blocking_issues: bool = False) -> WorkflowStage:
     if stage == WorkflowStage.REQUEST_RECEIVED:
-        return WorkflowStage.EPIC_DRAFT
+        return WorkflowStage.IMPLEMENTATION
     if stage == WorkflowStage.EPIC_DRAFT:
-        return WorkflowStage.EPIC_REVIEW
+        return WorkflowStage.IMPLEMENTATION
     if stage == WorkflowStage.EPIC_REVIEW:
         return WorkflowStage.IMPLEMENTATION
     if stage == WorkflowStage.IMPLEMENTATION:
@@ -35,4 +36,6 @@ def next_stage(stage: WorkflowStage, has_blocking_issues: bool = False) -> Workf
         return WorkflowStage.IMPLEMENTATION
     if stage == WorkflowStage.DELIVERY_VERIFICATION:
         return WorkflowStage.DEPLOY_READY
+    if stage == WorkflowStage.STALLED:
+        return WorkflowStage.STALLED
     return WorkflowStage.DEPLOY_READY

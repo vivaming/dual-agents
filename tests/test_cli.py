@@ -30,7 +30,28 @@ def test_init_target_exports_assets_and_prints_next_steps(tmp_path: Path, monkey
     assert (tmp_path / ".opencode" / "opencode.json").exists()
     assert (tmp_path / ".dual-agents" / "validate_report.py").exists()
     assert (tmp_path / ".dual-agents" / "validate_review.py").exists()
+    assert (tmp_path / ".dual-agents" / "monitor_stop.py").exists()
     assert "Next steps:" in result.stdout
+
+
+def test_explain_stop_reports_background_service(tmp_path: Path) -> None:
+    transcript_file = tmp_path / "transcript.txt"
+    transcript_file.write_text("$ python -m http.server 8000 --directory . &\n")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "explain-stop",
+            "--transcript-file",
+            str(transcript_file),
+            "--unit-name",
+            "local server bootstrap",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Stop signal: BACKGROUND_SERVICE" in result.stdout
+    assert "local URL" in result.stdout
 
 
 def test_review_gate_runs_codex_and_persists_lead_review(tmp_path: Path, monkeypatch) -> None:
@@ -196,6 +217,124 @@ def test_review_gate_validates_final_review_delivery_proof(tmp_path: Path, monke
     assert json.loads(state_path.read_text())["current_unit"]["stage"] == "adjudication"
 
 
+def test_review_gate_saves_malformed_review_to_invalid_sidecar(tmp_path: Path, monkeypatch) -> None:
+    request_file = tmp_path / "review-request.txt"
+    request_file.write_text("# Review Request\n\nPlease review this bounded unit.\n")
+    state_path = tmp_path / ".dual-agents" / "run-state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(
+            {
+                "current_unit": {
+                    "unit_slug": "task-02-metadata",
+                    "stage": "critical_review",
+                    "review_fix_rounds_used": 0,
+                    "lead_review_required": False,
+                    "critical_review_required": False,
+                    "current_builder_task": None,
+                    "current_builder_task_type": None,
+                    "expected_lead_review_path": str(tmp_path / ".dual-agents" / "reviews" / "task-02-metadata" / "lead-review.txt"),
+                    "expected_final_review_path": str(tmp_path / ".dual-agents" / "reviews" / "task-02-metadata" / "final-review.txt"),
+                }
+            }
+        )
+        + "\n"
+    )
+
+    def fake_run(command, cwd, capture_output, text, check):
+        return CompletedProcess(
+            command,
+            0,
+            stdout="1. Verdict: APPROVED\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr("dual_agents.cli.subprocess.run", fake_run)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "review-gate",
+            "--unit-slug",
+            "task-02-metadata",
+            "--mode",
+            "final",
+            "--request-file",
+            str(request_file),
+            "--repo-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    artifact_path = tmp_path / ".dual-agents" / "reviews" / "task-02-metadata" / "final-review.txt"
+    invalid_path = tmp_path / ".dual-agents" / "reviews" / "task-02-metadata" / "final-review.invalid.txt"
+    assert not artifact_path.exists()
+    assert invalid_path.exists()
+    assert invalid_path.read_text() == "1. Verdict: APPROVED\n"
+
+
+def test_submit_review_artifact_advances_without_running_codex(tmp_path: Path, monkeypatch) -> None:
+    review_file = tmp_path / ".dual-agents" / "reviews" / "task-03-collection-upgrades" / "final-review.txt"
+    review_file.parent.mkdir(parents=True, exist_ok=True)
+    review_file.write_text(
+        "1. Verdict: APPROVED\n"
+        "2. Current unit status: PASS\n"
+        "3. Blocking issues: None\n"
+        "4. Non-blocking issues: None\n"
+        "5. Cause classification: NOT_APPLICABLE\n"
+        "6. Delivery proof status: NOT_APPLICABLE\n"
+        "7. Next bounded unit may start: YES\n"
+        "8. Suggested next action: Start the next bounded unit.\n"
+    )
+    state_path = tmp_path / ".dual-agents" / "run-state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(
+            {
+                "current_unit": {
+                    "unit_slug": "task-03-collection-upgrades",
+                    "stage": "stalled",
+                    "review_fix_rounds_used": 0,
+                    "lead_review_required": False,
+                    "critical_review_required": False,
+                    "current_builder_task": None,
+                    "current_builder_task_type": None,
+                    "expected_lead_review_path": str(tmp_path / ".dual-agents" / "reviews" / "task-03-collection-upgrades" / "lead-review.txt"),
+                    "expected_final_review_path": str(review_file),
+                }
+            }
+        )
+        + "\n"
+    )
+
+    def fail_run(*args, **kwargs):
+        raise AssertionError("subprocess.run should not be called for submit-review-artifact")
+
+    monkeypatch.setattr("dual_agents.cli.subprocess.run", fail_run)
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "submit-review-artifact",
+            "--unit-slug",
+            "task-03-collection-upgrades",
+            "--mode",
+            "final",
+            "--review-file",
+            str(review_file),
+            "--repo-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["artifact_path"] == str(review_file)
+    assert payload["stage"] == "adjudication"
+    assert json.loads(state_path.read_text())["current_unit"]["stage"] == "adjudication"
+
+
 def test_pre_completion_audit_passes_with_valid_final_review(tmp_path: Path) -> None:
     reviews_dir = tmp_path / ".dual-agents" / "reviews" / "task-02-metadata"
     reviews_dir.mkdir(parents=True, exist_ok=True)
@@ -289,8 +428,102 @@ def test_start_unit_persists_run_state(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     state_path = tmp_path / ".dual-agents" / "run-state.json"
     assert payload["state_path"] == str(state_path)
+    assert payload["start_mode"] == "auto"
     saved = json.loads(state_path.read_text())
     assert saved["current_unit"]["unit_slug"] == "task-01-query-map"
+    assert saved["current_unit"]["stage"] == "implementation"
+    assert saved["current_unit"]["required_next_artifacts"] == ["builder_result"]
+
+
+def test_start_unit_auto_can_begin_with_review(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "start-unit",
+            "--unit-slug",
+            "task-01-query-map",
+            "--repo-root",
+            str(tmp_path),
+            "--task-summary",
+            "Run a pre-implementation design review for this spec before any code changes.",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    state_path = tmp_path / ".dual-agents" / "run-state.json"
+    saved = json.loads(state_path.read_text())
+    assert payload["start_mode"] == "auto"
+    assert saved["current_unit"]["stage"] == "epic_review"
+    assert saved["current_unit"]["required_next_artifacts"] == ["lead_review_artifact"]
+
+
+def test_start_unit_auto_can_use_explicit_task_file(tmp_path: Path) -> None:
+    task_file = tmp_path / "task.md"
+    task_file.write_text("# Task\n\nRun a pre-implementation design review for this architecture plan.")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "start-unit",
+            "--unit-slug",
+            "task-01-query-map",
+            "--repo-root",
+            str(tmp_path),
+            "--task-file",
+            str(task_file),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    state_path = tmp_path / ".dual-agents" / "run-state.json"
+    saved = json.loads(state_path.read_text())
+    assert payload["task_file"] == str(task_file)
+    assert saved["current_unit"]["stage"] == "epic_review"
+
+
+def test_start_unit_auto_discovers_epic_task_file(tmp_path: Path) -> None:
+    task_file = tmp_path / "epic" / "my-epic" / "03-task-query-map.md"
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text("# Task\n\nThis is a design gate. Review the spec before implementation.")
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "start-unit",
+            "--unit-slug",
+            "task-03-query-map",
+            "--repo-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    state_path = tmp_path / ".dual-agents" / "run-state.json"
+    saved = json.loads(state_path.read_text())
+    assert payload["task_file"] == str(task_file)
+    assert saved["current_unit"]["stage"] == "epic_review"
+
+
+def test_start_unit_explicit_review_mode_overrides_default(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "start-unit",
+            "--unit-slug",
+            "task-01-query-map",
+            "--repo-root",
+            str(tmp_path),
+            "--start-mode",
+            "review",
+        ],
+    )
+
+    assert result.exit_code == 0
+    state_path = tmp_path / ".dual-agents" / "run-state.json"
+    saved = json.loads(state_path.read_text())
     assert saved["current_unit"]["stage"] == "epic_review"
     assert saved["current_unit"]["required_next_artifacts"] == ["lead_review_artifact"]
 

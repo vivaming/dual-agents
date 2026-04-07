@@ -78,6 +78,24 @@ def test_parse_review_result_accepts_structured_output() -> None:
     assert result.next_bounded_unit_may_start == ProgressionDecision.YES
 
 
+def test_parse_review_result_accepts_issue_headers_without_colons() -> None:
+    result = parse_review_result(
+        """
+1. Verdict: APPROVED
+2. Current unit status: PASS
+3. Blocking issues
+4. Non-blocking issues
+- tighten naming
+5. Cause classification: NOT_APPLICABLE
+6. Delivery proof status: NOT_PROVEN
+7. Next bounded unit may start: YES
+8. Suggested next action: Verify the remote artifact before completion.
+"""
+    )
+    assert result.blocking_issues == ()
+    assert result.non_blocking_issues == ("tighten naming",)
+
+
 def test_parse_review_result_rejects_missing_field() -> None:
     with pytest.raises(WorkflowViolation):
         parse_review_result("1. Verdict: APPROVED")

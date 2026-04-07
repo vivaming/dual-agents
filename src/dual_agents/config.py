@@ -33,7 +33,7 @@ class WorkflowConfig(BaseModel):
     reviewer: ReviewerConfig
     coordinator_name: str = "dual-coordinator"
     opencode_provider_id: str = "zai"
-    opencode_model: str = "zai/glm-5"
+    opencode_model: str = "zai/glm-5.1"
     delivery_verification_commands: list[str] = Field(default_factory=list)
     delivery_principles: list[str] = Field(default_factory=list)
     review_packet_max_files: int = 5

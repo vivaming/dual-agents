@@ -20,14 +20,14 @@ This file tracks the current capabilities, constraints, and proven behaviors of 
 
 ## Active Architecture
 
-- **dual-coordinator**: Primary OpenCode conversation agent using `zai/glm-5`
-- **glm-builder**: OpenCode implementation agent using `zai/glm-5`
+- **dual-coordinator**: Primary OpenCode conversation agent using `zai/glm-5.1`
+- **glm-builder**: OpenCode implementation agent using `zai/glm-5.1`
 - **independent-auditor**: GLM-based checkpoint agent for stuck loops
 - **codex reviewer**: Local `codex` CLI used for critical review gates
 
 ## Global OpenCode Setup
 
-- **default model**: `zai/glm-5`
+- **default model**: `zai/glm-5.1`
 - **default agent**: `dual-coordinator`
 - **provider**: Z.AI via OpenAI-compatible endpoint
 - **base URL**: `https://api.z.ai/api/coding/paas/v4/`

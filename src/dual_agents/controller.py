@@ -51,6 +51,12 @@ class ReviewGateMode(str, Enum):
     FINAL = "final"
 
 
+class BoundedUnitStartMode(str, Enum):
+    AUTO = "auto"
+    IMPLEMENTATION = "implementation"
+    REVIEW = "review"
+
+
 class DecisionCategory(str, Enum):
     ORDINARY_IMPLEMENTATION = "ORDINARY_IMPLEMENTATION"
     NEW_TASKS = "NEW_TASKS"
@@ -121,11 +127,38 @@ class BuilderResult:
         return self.verdict in {BuilderVerdict.CHANGES_REQUIRED, BuilderVerdict.BLOCKED, BuilderVerdict.STALLED}
 
 
+REVIEW_START_MARKERS = (
+    "design review",
+    "lead review",
+    "pre-implementation review",
+    "pre implementation review",
+    "review the plan",
+    "review this plan",
+    "review the spec",
+    "review this spec",
+    "approve the plan",
+    "approve the spec",
+    "architecture review",
+    "design gate",
+    "review gate",
+    "plan gate",
+    "spec gate",
+)
+
+REVIEW_START_TOKENS = (
+    "design",
+    "plan",
+    "spec",
+    "architecture",
+    "proposal",
+)
+
+
 FIELD_PATTERNS = {
     "verdict": re.compile(r"^\s*(?:\d+\.\s*)?Verdict:\s*(.+?)\s*$", re.IGNORECASE),
     "current_unit_status": re.compile(r"^\s*(?:\d+\.\s*)?Current unit status:\s*(.+?)\s*$", re.IGNORECASE),
-    "blocking_issues": re.compile(r"^\s*(?:\d+\.\s*)?Blocking issues:\s*(.*?)\s*$", re.IGNORECASE),
-    "non_blocking_issues": re.compile(r"^\s*(?:\d+\.\s*)?Non-blocking issues:\s*(.*?)\s*$", re.IGNORECASE),
+    "blocking_issues": re.compile(r"^\s*(?:\d+\.\s*)?Blocking issues:?\s*(.*?)\s*$", re.IGNORECASE),
+    "non_blocking_issues": re.compile(r"^\s*(?:\d+\.\s*)?Non-blocking issues:?\s*(.*?)\s*$", re.IGNORECASE),
     "cause_classification": re.compile(r"^\s*(?:\d+\.\s*)?Cause classification:\s*(.+?)\s*$", re.IGNORECASE),
     "delivery_proof_status": re.compile(
         r"^\s*(?:\d+\.\s*)?Delivery proof status:\s*(.+?)\s*$", re.IGNORECASE
@@ -481,6 +514,32 @@ def is_bounded_builder_task(task_summary: str) -> bool:
     if any(marker in lowered for marker in broad_markers):
         return False
     return True
+
+
+def choose_initial_stage(
+    *,
+    start_mode: BoundedUnitStartMode,
+    task_summary: str | None = None,
+    task_context: str | None = None,
+) -> WorkflowStage:
+    if start_mode == BoundedUnitStartMode.IMPLEMENTATION:
+        return WorkflowStage.IMPLEMENTATION
+    if start_mode == BoundedUnitStartMode.REVIEW:
+        return WorkflowStage.EPIC_REVIEW
+
+    parts = [part.strip().lower() for part in (task_summary, task_context) if part and part.strip()]
+    summary = "\n".join(parts)
+    if not summary:
+        return WorkflowStage.IMPLEMENTATION
+
+    if any(marker in summary for marker in REVIEW_START_MARKERS):
+        return WorkflowStage.EPIC_REVIEW
+
+    has_review_word = "review" in summary or "approve" in summary
+    if has_review_word and any(token in summary for token in REVIEW_START_TOKENS):
+        return WorkflowStage.EPIC_REVIEW
+
+    return WorkflowStage.IMPLEMENTATION
 
 
 @dataclass

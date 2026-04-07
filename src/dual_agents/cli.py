@@ -2,17 +2,30 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 import typer
+import dual_agents.stop_monitor as stop_monitor_module
 
 from dual_agents.codex_review import build_review_command, build_review_prompt
 from dual_agents.config import AgentConfig, ProviderConfig, ReviewerConfig, WorkflowConfig
-from dual_agents.controller import DeliveryProofStatus, ReviewGateMode, WorkflowController, WorkflowStage, parse_review_result, validate_review_result
+from dual_agents.controller import (
+    BoundedUnitStartMode,
+    DeliveryProofStatus,
+    ReviewGateMode,
+    WorkflowController,
+    WorkflowStage,
+    WorkflowViolation,
+    choose_initial_stage,
+    parse_review_result,
+    validate_review_result,
+)
 from dual_agents.opencode_assets import build_agent_markdown, build_command_markdown, build_opencode_config
+from dual_agents.stop_monitor import classify_stop, format_stop_report
 from dual_agents.state import (
     RunState,
     apply_run_state,
@@ -181,8 +194,8 @@ SELF_REVIEW_MARKERS = (
 FIELD_PATTERNS = {
     "verdict": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Verdict:\\s*(.+?)\\s*$", re.IGNORECASE),
     "current_unit_status": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Current unit status:\\s*(.+?)\\s*$", re.IGNORECASE),
-    "blocking_issues": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Blocking issues:\\s*(.*?)\\s*$", re.IGNORECASE),
-    "non_blocking_issues": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Non-blocking issues:\\s*(.*?)\\s*$", re.IGNORECASE),
+    "blocking_issues": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Blocking issues:?\\s*(.*?)\\s*$", re.IGNORECASE),
+    "non_blocking_issues": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Non-blocking issues:?\\s*(.*?)\\s*$", re.IGNORECASE),
     "cause_classification": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Cause classification:\\s*(.+?)\\s*$", re.IGNORECASE),
     "delivery_proof_status": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Delivery proof status:\\s*(.+?)\\s*$", re.IGNORECASE),
     "next_bounded_unit_may_start": re.compile(r"^\\s*(?:\\d+\\.\\s*)?Next bounded unit may start:\\s*(.+?)\\s*$", re.IGNORECASE),
@@ -334,6 +347,13 @@ if __name__ == "__main__":
 """
 
 
+def build_stop_monitor_script() -> str:
+    source = Path(stop_monitor_module.__file__).read_text()
+    if source.startswith("#!/usr/bin/env python3\n"):
+        return source
+    return "#!/usr/bin/env python3\n" + source
+
+
 def default_workflow_config() -> WorkflowConfig:
     glm_provider = ProviderConfig(
         name="glm",
@@ -398,6 +418,7 @@ def _export_assets(output_dir: Path) -> None:
     (prompts_dir / "codex-review.txt").write_text(build_review_prompt(config) + "\n")
     (prompts_dir / "validate_report.py").write_text(build_report_validator_script())
     (prompts_dir / "validate_review.py").write_text(build_review_validator_script())
+    (prompts_dir / "monitor_stop.py").write_text(build_stop_monitor_script())
 
 
 def _artifact_filename_for_mode(mode: ReviewGateMode) -> str:
@@ -406,6 +427,10 @@ def _artifact_filename_for_mode(mode: ReviewGateMode) -> str:
     if mode == ReviewGateMode.FINAL:
         return "final-review.txt"
     raise ValueError(f"Unsupported review gate mode for artifact persistence: {mode.value}")
+
+
+def _invalid_artifact_path(artifact_path: Path) -> Path:
+    return artifact_path.with_name(f"{artifact_path.stem}.invalid{artifact_path.suffix}")
 
 
 def _run_codex_review(*, config: WorkflowConfig, review_request: str, cwd: Path) -> str:
@@ -464,6 +489,33 @@ def _load_controller_from_state(
     return controller, run_state, state_path
 
 
+def _normalize_unit_key(value: str) -> str:
+    lowered = value.lower()
+    lowered = re.sub(r"\.md$", "", lowered)
+    lowered = re.sub(r"^\d+[a-z]?-", "", lowered)
+    lowered = re.sub(r"^task-\d+-", "", lowered)
+    lowered = re.sub(r"[^a-z0-9]+", "-", lowered)
+    lowered = re.sub(r"-+", "-", lowered).strip("-")
+    return lowered
+
+
+def _discover_task_file(repo_root: Path, unit_slug: str) -> Path | None:
+    epic_root = repo_root / "epic"
+    if not epic_root.exists():
+        return None
+
+    target_key = _normalize_unit_key(unit_slug)
+    matches: list[Path] = []
+    for path in epic_root.rglob("*.md"):
+        candidate_key = _normalize_unit_key(path.stem)
+        if candidate_key == target_key or candidate_key.endswith(target_key) or target_key.endswith(candidate_key):
+            matches.append(path)
+
+    if len(matches) == 1:
+        return matches[0]
+    return None
+
+
 def _validate_saved_final_review(
     review_path: Path,
     *,
@@ -484,6 +536,63 @@ def _validate_saved_final_review(
     }
 
 
+def _submit_existing_review_artifact(
+    *,
+    unit_slug: str,
+    mode: ReviewGateMode,
+    review_file: Path,
+    repo_root: Path,
+    delivery_sensitive: bool,
+    require_delivery_proof: DeliveryProofStatus | None,
+) -> dict[str, str]:
+    if mode == ReviewGateMode.GENERIC:
+        raise typer.BadParameter("submit-review-artifact only supports lead or final modes.")
+
+    controller, run_state, state_path = _load_controller_from_state(
+        repo_root=repo_root,
+        delivery_sensitive=delivery_sensitive,
+    )
+    if mode == ReviewGateMode.LEAD:
+        controller.begin_new_bounded_unit(unit_slug)
+        controller.stage = WorkflowStage.EPIC_REVIEW
+    else:
+        if run_state.current_unit and run_state.current_unit.unit_slug != unit_slug:
+            raise typer.BadParameter(
+                f"Run-state current unit is {run_state.current_unit.unit_slug}, not {unit_slug}."
+            )
+        controller.current_unit_slug = unit_slug.strip()
+        controller.stage = WorkflowStage.CRITICAL_REVIEW
+
+    artifact_path = controller.expected_review_artifact_path()
+    artifact_path.parent.mkdir(parents=True, exist_ok=True)
+    if review_file.resolve() != artifact_path.resolve():
+        artifact_path.write_text(review_file.read_text().rstrip() + "\n")
+
+    review_result = parse_review_result(artifact_path.read_text())
+    validate_review_result(
+        review_result,
+        mode=mode,
+        require_delivery_proof=require_delivery_proof,
+    )
+    controller.submit_saved_review()
+    run_state.current_unit = build_bounded_unit_state(controller)
+    run_state.current_unit = mark_progress(
+        run_state.current_unit,
+        open_blocking_issues=list(review_result.blocking_issues),
+    )
+    save_run_state(state_path, run_state)
+    return {
+        "unit_slug": unit_slug,
+        "mode": mode.value,
+        "artifact_path": str(artifact_path),
+        "state_path": str(state_path),
+        "stage": controller.stage.value,
+        "current_unit_status": review_result.current_unit_status.value,
+        "next_bounded_unit_may_start": review_result.next_bounded_unit_may_start.value,
+        "suggested_next_action": review_result.suggested_next_action,
+    }
+
+
 @app.callback()
 def app_callback() -> None:
     """Dual-agent workflow helpers."""
@@ -500,6 +609,15 @@ def preview_assets() -> None:
         "codex_review_command": build_review_command(config),
     }
     typer.echo(json.dumps(payload, indent=2))
+
+
+@app.command("explain-stop")
+def explain_stop(
+    transcript_file: Path = typer.Option(..., exists=True, dir_okay=False, readable=True),
+    unit_name: str = typer.Option("current unit"),
+) -> None:
+    signal = classify_stop(transcript_file.read_text())
+    typer.echo(format_stop_report(signal, unit_name=unit_name))
 
 
 @app.command("export")
@@ -560,6 +678,23 @@ def start_unit(
     unit_slug: str = typer.Option(..., help="Bounded unit slug, e.g. task-01-query-map."),
     repo_root: Path = typer.Option(Path("."), dir_okay=True, file_okay=False, resolve_path=True, help="Target repo root."),
     delivery_sensitive: bool = typer.Option(False, help="Require delivery-sensitive handling for this unit."),
+    start_mode: BoundedUnitStartMode = typer.Option(
+        BoundedUnitStartMode.AUTO,
+        case_sensitive=False,
+        help="How to start the bounded unit: auto, implementation, or review.",
+    ),
+    task_summary: str | None = typer.Option(
+        None,
+        help="Optional bounded task summary used when auto-selecting the start mode.",
+    ),
+    task_file: Path | None = typer.Option(
+        None,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="Optional task spec file used when auto-selecting the start mode.",
+    ),
 ) -> None:
     repo_root = repo_root.resolve()
     controller, run_state, state_path = _load_controller_from_state(
@@ -567,7 +702,13 @@ def start_unit(
         delivery_sensitive=delivery_sensitive,
     )
     controller.begin_new_bounded_unit(unit_slug)
-    controller.stage = WorkflowStage.EPIC_REVIEW
+    resolved_task_file = task_file or _discover_task_file(repo_root, unit_slug)
+    task_context = resolved_task_file.read_text() if resolved_task_file is not None else None
+    controller.stage = choose_initial_stage(
+        start_mode=start_mode,
+        task_summary=task_summary,
+        task_context=task_context,
+    )
     run_state.current_unit = build_bounded_unit_state(controller)
     save_run_state(state_path, run_state)
     typer.echo(
@@ -575,6 +716,8 @@ def start_unit(
             {
                 "unit_slug": unit_slug,
                 "stage": controller.stage.value,
+                "start_mode": start_mode.value,
+                "task_file": str(resolved_task_file) if resolved_task_file is not None else None,
                 "state_path": str(state_path),
                 "expected_lead_review_path": run_state.current_unit.expected_lead_review_path,
                 "expected_final_review_path": run_state.current_unit.expected_final_review_path,
@@ -622,9 +765,16 @@ def review_gate(
     artifact_path.parent.mkdir(parents=True, exist_ok=True)
 
     review_output = _run_codex_review(config=config, review_request=review_request, cwd=repo_root)
-    artifact_path.write_text(review_output + "\n")
+    try:
+        review_result = parse_review_result(review_output)
+    except WorkflowViolation as exc:
+        invalid_path = _invalid_artifact_path(artifact_path)
+        invalid_path.write_text(review_output + "\n")
+        raise typer.BadParameter(
+            f"Codex review returned invalid structured output: {exc}. Raw output saved to {invalid_path}."
+        ) from exc
 
-    review_result = parse_review_result(review_output)
+    artifact_path.write_text(review_output + "\n")
     validate_review_result(
         review_result,
         mode=mode,
@@ -653,6 +803,27 @@ def review_gate(
             indent=2,
         )
     )
+
+
+@app.command("submit-review-artifact")
+def submit_review_artifact(
+    unit_slug: str = typer.Option(..., help="Bounded unit slug, e.g. task-01-query-map."),
+    mode: ReviewGateMode = typer.Option(..., case_sensitive=False, help="Review gate mode: lead or final."),
+    review_file: Path = typer.Option(..., exists=True, dir_okay=False, readable=True, resolve_path=True, help="Existing saved review artifact to submit."),
+    repo_root: Path = typer.Option(Path("."), dir_okay=True, file_okay=False, resolve_path=True, help="Target repo root."),
+    delivery_sensitive: bool = typer.Option(False, help="Require delivery-sensitive final review handling."),
+    require_delivery_proof: DeliveryProofStatus | None = typer.Option(None, case_sensitive=False, help="Require specific delivery proof status for final reviews."),
+) -> None:
+    repo_root = repo_root.resolve()
+    payload = _submit_existing_review_artifact(
+        unit_slug=unit_slug,
+        mode=mode,
+        review_file=review_file,
+        repo_root=repo_root,
+        delivery_sensitive=delivery_sensitive,
+        require_delivery_proof=require_delivery_proof,
+    )
+    typer.echo(json.dumps(payload, indent=2))
 
 
 @app.command("pre-completion-audit")
