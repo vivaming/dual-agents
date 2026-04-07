@@ -11,10 +11,14 @@ def build_command_markdown(config: WorkflowConfig) -> str:
     verification_steps = "\n".join(f"- `{command}`" for command in config.delivery_verification_commands)
     delivery_principles = "\n".join(f"- {principle}" for principle in config.delivery_principles)
     review_storage_rules = (
+        "At the start of a bounded unit, run `dual-agents start-unit --unit-slug <unit-slug> --repo-root <repo>`.\n"
+        "If the task file is known, include `--task-file <path>`; otherwise include a concise `--task-summary \"...\"`.\n"
+        "Read the JSON output and follow the chosen `stage`: `implementation` means proceed with builder delivery, `epic_review` means run a lead/design review first.\n"
         "Save each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt`.\n"
         "HARD GATE: After each bounded unit implementation and self-review, run "
         "`dual-agents review-gate --unit-slug <unit-slug> --mode final --request-file <path> --repo-root <repo>`.\n"
         "If that command has not run successfully for the current unit, the unit is not complete and the next bounded unit may not start.\n"
+        "If you already have a valid saved review file and only need to advance state, use `dual-agents submit-review-artifact --unit-slug <unit-slug> --mode <lead|final> --review-file <path> --repo-root <repo>` instead of rerunning Codex.\n"
         "Before claiming review pass, unit pass, or final completion, validate the saved final review with "
         "`python .dual-agents/validate_review.py --mode final --review-file .dual-agents/reviews/<unit-slug>/final-review.txt`.\n"
         "If the task is delivery-sensitive, require `--require-delivery-proof PROVEN` before remote-success claims.\n"
@@ -37,8 +41,9 @@ def build_command_markdown(config: WorkflowConfig) -> str:
         Use the `/dual` command to run the dual-agent workflow.
         Treat `{trigger}` as an alias for this command.
         Use `{config.builder.name}` for implementation.
-        Start each bounded unit with implementation, not a mandatory pre-implementation review.
-        Use Codex for a design review before implementation only when the user explicitly asks for that.
+        Start each bounded unit by running `dual-agents start-unit` so the workflow records state and auto-detects implementation vs pre-implementation review from the user statement plus the task file.
+        If `dual-agents start-unit` chooses `implementation`, continue with delivery/build work.
+        If it chooses `epic_review`, use Codex for a lead/design review before implementation.
         After implementation, call the local Codex CLI review worker for a final critical review.
         Treat every `CHANGES_REQUESTED` verdict as an instruction to remediate the captured issue cluster and rerun review, not as optional advice.
         Continue review/fix cycles on that same bounded unit until blocking issues are cleared or the 5-round loop budget for that issue cluster is exhausted, then pause and wait for user instruction.
@@ -124,8 +129,13 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             You are the coordinator. Use `{config.builder.name}` for implementation.
             The reviewer runs through local Codex CLI, not as an OpenCode agent.
             Bound the current unit before acting and identify the artifact that proves its status.
+            Before doing substantive work on a new bounded unit, run `dual-agents start-unit --unit-slug <unit-slug> --repo-root <repo>`.
+            If the task file is known, include `--task-file <path>`; otherwise include a concise `--task-summary "<user request>"`.
+            Read the returned JSON. Treat `stage=implementation` as permission to proceed with builder delivery. Treat `stage=epic_review` as a required lead/design review first.
+            Use `decision_reason`, `review_score`, and `implementation_score` as workflow evidence when the user asks why the session started in implementation or review.
             In controller terms, start each task with `begin_new_bounded_unit(<unit-slug>)`, hand one bounded implementation task to `{config.builder.name}`, and use `submit_saved_review()` only for saved review artifacts.
-            Do not run a lead/design review before implementation unless the user explicitly asks for one.
+            Do not override an `implementation` start just because an epic exists. If the task file is delivery-shaped, stay focused on delivery/build work.
+            Activate a lead/design review only when the classifier or the user explicitly points to planning/review intent.
             Do not let the conversation drift into reviewing the whole epic when the current task should be implemented.
             After any final review that approves the current unit, stop at that task boundary and only then begin the next bounded unit.
             Never roll directly from `Task N` unfinished review/fix loop into `Task N+1` implementation.
@@ -133,6 +143,7 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             If that command has not run successfully for the current unit, the unit is not complete, the next bounded unit may not start, and you may not present a completion summary.
             Accept a review result only from `.dual-agents/reviews/<unit-slug>/final-review.txt` for the current bounded unit, not from pasted text, memory, or a different task's artifact.
             Save each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt` and validate it with `python .dual-agents/validate_review.py --mode final --review-file .dual-agents/reviews/<unit-slug>/final-review.txt` before any claim that review passed, the unit passed, or the task is complete.
+            If a valid saved review artifact already exists and the goal is to advance workflow state, use `dual-agents submit-review-artifact` instead of rerunning Codex through `dual-agents review-gate`.
             Before any completion summary, run `dual-agents pre-completion-audit --repo-root <repo>` and stop if it reports a missing or invalid final review artifact.
             If the task is delivery-sensitive, require `--require-delivery-proof PROVEN` on that final validation before any remote-success claim.
             If the saved review artifact is missing, malformed, or fails validation, classify the unit as `STALLED` instead of summarizing the review from memory.

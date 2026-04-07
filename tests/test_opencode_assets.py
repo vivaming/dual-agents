@@ -7,8 +7,10 @@ from dual_agents.opencode_assets import build_agent_markdown, build_command_mark
 def test_build_command_mentions_dual_trigger() -> None:
     markdown = build_command_markdown(default_workflow_config())
     assert "/dual" in markdown
-    assert "start each bounded unit with implementation" in markdown.lower()
-    assert "only when the user explicitly asks" in markdown.lower()
+    assert "start each bounded unit by running `dual-agents start-unit`" in markdown.lower()
+    assert "auto-detects implementation vs pre-implementation review" in markdown.lower()
+    assert "if `dual-agents start-unit` chooses `implementation`" in markdown.lower()
+    assert "if it chooses `epic_review`" in markdown.lower()
     assert "after implementation, call the local codex cli review worker" in markdown.lower()
     assert "after a bounded unit passes final review" not in markdown.lower()
     assert "continue review/fix cycles on that same bounded unit" in markdown.lower()
@@ -18,6 +20,7 @@ def test_build_command_mentions_dual_trigger() -> None:
     assert "remotely available, deployed, or notified" in markdown.lower()
     assert "validate_review.py" in markdown
     assert "final-review.txt" in markdown
+    assert "submit-review-artifact" in markdown
     assert "watchdog-check" in markdown
     assert "hard gate" in markdown.lower()
     assert "pre-completion-audit" in markdown
@@ -34,7 +37,11 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "one row per requested brand" in agents["dual-coordinator.md"].lower()
     assert "validate_report.py" in agents["dual-coordinator.md"]
     assert "do not begin broad remediation in the same turn" in agents["dual-coordinator.md"].lower()
-    assert "do not run a lead/design review before implementation unless the user explicitly asks for one" in agents["dual-coordinator.md"].lower()
+    assert "before doing substantive work on a new bounded unit, run `dual-agents start-unit" in agents["dual-coordinator.md"].lower()
+    assert "read the returned json" in agents["dual-coordinator.md"].lower()
+    assert "decision_reason" in agents["dual-coordinator.md"]
+    assert "do not override an `implementation` start just because an epic exists" in agents["dual-coordinator.md"].lower()
+    assert "activate a lead/design review only when the classifier or the user explicitly points to planning/review intent" in agents["dual-coordinator.md"].lower()
     assert "drift into reviewing the whole epic" in agents["dual-coordinator.md"].lower()
     assert "hand one bounded implementation task" in agents["dual-coordinator.md"].lower()
     assert "begin_new_bounded_unit(<unit-slug>)" in agents["dual-coordinator.md"]
@@ -53,6 +60,7 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "schema is known" in agents["dual-coordinator.md"].lower()
     assert "heartbeat" in agents["dual-coordinator.md"].lower()
     assert "stop-unit" in agents["dual-coordinator.md"].lower()
+    assert "submit-review-artifact" in agents["dual-coordinator.md"]
     assert "pre-completion-audit" in agents["dual-coordinator.md"]
     assert "hard gate" in agents["dual-coordinator.md"].lower()
     assert "return `stalled`" in agents["glm-builder.md"].lower()
