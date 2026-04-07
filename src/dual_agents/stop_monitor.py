@@ -6,6 +6,10 @@ from enum import Enum
 
 
 class StopCategory(str, Enum):
+    WORKTREE_REQUIRED = "WORKTREE_REQUIRED"
+    PREFLIGHT_BYPASS = "PREFLIGHT_BYPASS"
+    DIRTY_REPO_STAGE_OVERLOAD = "DIRTY_REPO_STAGE_OVERLOAD"
+    TARGET_ENDPOINT_ERROR = "TARGET_ENDPOINT_ERROR"
     STREAM_TIMEOUT = "STREAM_TIMEOUT"
     TOOL_SCHEMA_ERROR = "TOOL_SCHEMA_ERROR"
     OUTPUT_CORRUPTION = "OUTPUT_CORRUPTION"
@@ -26,6 +30,26 @@ class StopSignal:
 
 
 STOP_PATTERN_MAP: dict[StopCategory, tuple[re.Pattern[str], ...]] = {
+    StopCategory.WORKTREE_REQUIRED: (
+        re.compile(r"require_worktree\.py", re.IGNORECASE),
+        re.compile(r"dirty file count .* exceeds threshold", re.IGNORECASE),
+        re.compile(r"use a linked worktree", re.IGNORECASE),
+    ),
+    StopCategory.PREFLIGHT_BYPASS: (
+        re.compile(r"preflight_stage\.py", re.IGNORECASE),
+        re.compile(r"dirty files; isolate the unit in a worktree", re.IGNORECASE),
+        re.compile(r"use a narrower explicit file list", re.IGNORECASE),
+    ),
+    StopCategory.DIRTY_REPO_STAGE_OVERLOAD: (
+        re.compile(r"git add .*intro_cache", re.IGNORECASE),
+        re.compile(r"repository contains unrelated dirty files", re.IGNORECASE),
+        re.compile(r"git add .*sitemap\.xml", re.IGNORECASE),
+    ),
+    StopCategory.TARGET_ENDPOINT_ERROR: (
+        re.compile(r"was there a typo in the url or port\?", re.IGNORECASE),
+        re.compile(r"connection refused", re.IGNORECASE),
+        re.compile(r"failed to fetch.*localhost", re.IGNORECASE),
+    ),
     StopCategory.STREAM_TIMEOUT: (
         re.compile(r"SSE read timed out", re.IGNORECASE),
         re.compile(r"review times? out", re.IGNORECASE),
@@ -78,6 +102,22 @@ def _extract_evidence(text: str, patterns: tuple[re.Pattern[str], ...]) -> tuple
 
 def _recovery_for(category: StopCategory) -> tuple[str, bool]:
     recovery_map = {
+        StopCategory.WORKTREE_REQUIRED: (
+            "Stop and move the bounded unit into a linked worktree before staging, committing, or pushing.",
+            False,
+        ),
+        StopCategory.PREFLIGHT_BYPASS: (
+            "Do not bypass the preflight guard; isolate the intended file set in a worktree or narrow the explicit staging list.",
+            False,
+        ),
+        StopCategory.DIRTY_REPO_STAGE_OVERLOAD: (
+            "Do not broad-stage a dirty repo. Re-anchor on the bounded file list and stage only the intended artifact set.",
+            False,
+        ),
+        StopCategory.TARGET_ENDPOINT_ERROR: (
+            "Verify the target URL, port, and local service status before retrying the bounded check.",
+            False,
+        ),
         StopCategory.STREAM_TIMEOUT: (
             "Save a bounded checkpoint, restart in a fresh session, and retry only the smallest unresolved unit.",
             True,
@@ -135,7 +175,17 @@ def classify_stop(raw_text: str) -> StopSignal:
             evidence.extend(category_evidence)
 
     unique_matched = tuple(dict.fromkeys(matched))
-    if len(unique_matched) >= 2 or text.lower().count("invalid arguments") >= 2:
+    degradation_markers = {
+        StopCategory.STREAM_TIMEOUT,
+        StopCategory.TOOL_SCHEMA_ERROR,
+        StopCategory.OUTPUT_CORRUPTION,
+        StopCategory.DATA_SHAPE_MISMATCH,
+        StopCategory.CAPABILITY_MISMATCH,
+        StopCategory.BACKGROUND_SERVICE,
+        StopCategory.TARGET_ENDPOINT_ERROR,
+    }
+    degradation_match_count = sum(1 for category in unique_matched if category in degradation_markers)
+    if degradation_match_count >= 2 or text.lower().count("invalid arguments") >= 2:
         recovery, fresh = _recovery_for(StopCategory.SESSION_DEGRADATION)
         return StopSignal(
             category=StopCategory.SESSION_DEGRADATION,
