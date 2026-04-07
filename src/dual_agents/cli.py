@@ -19,8 +19,8 @@ from dual_agents.controller import (
     ReviewGateMode,
     WorkflowController,
     WorkflowStage,
+    analyze_initial_stage,
     WorkflowViolation,
-    choose_initial_stage,
     parse_review_result,
     validate_review_result,
 )
@@ -704,11 +704,12 @@ def start_unit(
     controller.begin_new_bounded_unit(unit_slug)
     resolved_task_file = task_file or _discover_task_file(repo_root, unit_slug)
     task_context = resolved_task_file.read_text() if resolved_task_file is not None else None
-    controller.stage = choose_initial_stage(
+    decision = analyze_initial_stage(
         start_mode=start_mode,
         task_summary=task_summary,
         task_context=task_context,
     )
+    controller.stage = decision.stage
     run_state.current_unit = build_bounded_unit_state(controller)
     save_run_state(state_path, run_state)
     typer.echo(
@@ -718,6 +719,9 @@ def start_unit(
                 "stage": controller.stage.value,
                 "start_mode": start_mode.value,
                 "task_file": str(resolved_task_file) if resolved_task_file is not None else None,
+                "decision_reason": decision.reason,
+                "review_score": decision.review_score,
+                "implementation_score": decision.implementation_score,
                 "state_path": str(state_path),
                 "expected_lead_review_path": run_state.current_unit.expected_lead_review_path,
                 "expected_final_review_path": run_state.current_unit.expected_final_review_path,

@@ -429,6 +429,7 @@ def test_start_unit_persists_run_state(tmp_path: Path) -> None:
     state_path = tmp_path / ".dual-agents" / "run-state.json"
     assert payload["state_path"] == str(state_path)
     assert payload["start_mode"] == "auto"
+    assert "decision_reason" in payload
     saved = json.loads(state_path.read_text())
     assert saved["current_unit"]["unit_slug"] == "task-01-query-map"
     assert saved["current_unit"]["stage"] == "implementation"
@@ -505,6 +506,36 @@ def test_start_unit_auto_discovers_epic_task_file(tmp_path: Path) -> None:
     saved = json.loads(state_path.read_text())
     assert payload["task_file"] == str(task_file)
     assert saved["current_unit"]["stage"] == "epic_review"
+
+
+def test_start_unit_auto_prefers_implementation_for_delivery_shaped_task_file(tmp_path: Path) -> None:
+    task_file = tmp_path / "epic" / "my-epic" / "03-task-query-map.md"
+    task_file.parent.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(
+        "# Task\n\n"
+        "## Files\n- Modify: data/collection_definitions.json\n\n"
+        "## Required Changes\nImplement the collection update.\n\n"
+        "## Acceptance Criteria\nRendered output contains the new section.\n\n"
+        "## Verification\npython3 scripts/generate.py --dry-run\n"
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "start-unit",
+            "--unit-slug",
+            "task-03-query-map",
+            "--repo-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    state_path = tmp_path / ".dual-agents" / "run-state.json"
+    saved = json.loads(state_path.read_text())
+    assert saved["current_unit"]["stage"] == "implementation"
+    assert payload["implementation_score"] >= payload["review_score"]
 
 
 def test_start_unit_explicit_review_mode_overrides_default(tmp_path: Path) -> None:

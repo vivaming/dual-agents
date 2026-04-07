@@ -1,7 +1,13 @@
 import json
 from pathlib import Path
 
-from dual_agents.controller import BoundedUnitStartMode, WorkflowController, WorkflowStage, choose_initial_stage
+from dual_agents.controller import (
+    BoundedUnitStartMode,
+    WorkflowController,
+    WorkflowStage,
+    analyze_initial_stage,
+    choose_initial_stage,
+)
 from dual_agents.state import (
     RunState,
     apply_run_state,
@@ -112,3 +118,27 @@ def test_choose_initial_stage_uses_task_context() -> None:
         )
         == WorkflowStage.EPIC_REVIEW
     )
+
+
+def test_analyze_initial_stage_prefers_implementation_for_delivery_shaped_epic() -> None:
+    decision = analyze_initial_stage(
+        start_mode=BoundedUnitStartMode.AUTO,
+        task_context=(
+            "# Task 03\n\n"
+            "## Files\n- Modify: data/foo.json\n- Modify: scripts/build.py\n\n"
+            "## Required Changes\nImplement the generator update.\n\n"
+            "## Acceptance Criteria\nRendered output is updated.\n\n"
+            "## Verification\npython3 scripts/build.py --dry-run\n"
+        ),
+    )
+    assert decision.stage == WorkflowStage.IMPLEMENTATION
+    assert decision.implementation_score >= decision.review_score
+
+
+def test_analyze_initial_stage_prefers_review_for_design_session_statement() -> None:
+    decision = analyze_initial_stage(
+        start_mode=BoundedUnitStartMode.AUTO,
+        task_summary="Use GPT to review the proposal and design the approach before implementation.",
+    )
+    assert decision.stage == WorkflowStage.EPIC_REVIEW
+    assert decision.review_score > decision.implementation_score

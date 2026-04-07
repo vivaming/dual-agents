@@ -153,6 +153,70 @@ REVIEW_START_TOKENS = (
     "proposal",
 )
 
+REVIEW_SCORE_MARKERS: tuple[tuple[str, int], ...] = (
+    ("pre-implementation review", 5),
+    ("pre implementation review", 5),
+    ("lead review", 5),
+    ("design review", 5),
+    ("architecture review", 5),
+    ("review gate", 4),
+    ("design gate", 4),
+    ("plan gate", 4),
+    ("spec gate", 4),
+    ("review the plan", 4),
+    ("review this plan", 4),
+    ("review the spec", 4),
+    ("review this spec", 4),
+    ("approve the plan", 4),
+    ("approve the spec", 4),
+    ("proposed architecture", 3),
+    ("implementation plan", 3),
+    ("design the approach", 3),
+    ("decide the approach", 3),
+    ("brainstorm", 2),
+)
+
+IMPLEMENTATION_SCORE_MARKERS: tuple[tuple[str, int], ...] = (
+    ("required changes", 4),
+    ("acceptance criteria", 4),
+    ("verification", 4),
+    ("delivery contract", 3),
+    ("files\n", 2),
+    ("- modify:", 4),
+    ("- create:", 3),
+    ("- update:", 3),
+    ("implement", 3),
+    ("implementation", 2),
+    ("build", 2),
+    ("fix", 2),
+    ("edit", 2),
+    ("modify", 2),
+    ("update", 2),
+    ("wire", 2),
+    ("integrate", 2),
+    ("generate", 2),
+    ("render", 2),
+    ("deliver", 2),
+    ("shipping", 2),
+    ("verification command", 2),
+)
+
+IMPLEMENTATION_BIAS_SECTIONS = (
+    "## files",
+    "## required changes",
+    "## acceptance criteria",
+    "## verification",
+    "## delivery contract",
+)
+
+
+@dataclass(frozen=True)
+class InitialStageDecision:
+    stage: WorkflowStage
+    reason: str
+    review_score: int
+    implementation_score: int
+
 
 FIELD_PATTERNS = {
     "verdict": re.compile(r"^\s*(?:\d+\.\s*)?Verdict:\s*(.+?)\s*$", re.IGNORECASE),
@@ -522,24 +586,92 @@ def choose_initial_stage(
     task_summary: str | None = None,
     task_context: str | None = None,
 ) -> WorkflowStage:
+    return analyze_initial_stage(
+        start_mode=start_mode,
+        task_summary=task_summary,
+        task_context=task_context,
+    ).stage
+
+
+def analyze_initial_stage(
+    *,
+    start_mode: BoundedUnitStartMode,
+    task_summary: str | None = None,
+    task_context: str | None = None,
+) -> InitialStageDecision:
     if start_mode == BoundedUnitStartMode.IMPLEMENTATION:
-        return WorkflowStage.IMPLEMENTATION
+        return InitialStageDecision(
+            stage=WorkflowStage.IMPLEMENTATION,
+            reason="Explicit start mode forced implementation.",
+            review_score=0,
+            implementation_score=1,
+        )
     if start_mode == BoundedUnitStartMode.REVIEW:
-        return WorkflowStage.EPIC_REVIEW
+        return InitialStageDecision(
+            stage=WorkflowStage.EPIC_REVIEW,
+            reason="Explicit start mode forced pre-implementation review.",
+            review_score=1,
+            implementation_score=0,
+        )
 
     parts = [part.strip().lower() for part in (task_summary, task_context) if part and part.strip()]
     summary = "\n".join(parts)
     if not summary:
-        return WorkflowStage.IMPLEMENTATION
+        return InitialStageDecision(
+            stage=WorkflowStage.IMPLEMENTATION,
+            reason="No planning signal was provided, so bounded units start in implementation.",
+            review_score=0,
+            implementation_score=1,
+        )
 
     if any(marker in summary for marker in REVIEW_START_MARKERS):
-        return WorkflowStage.EPIC_REVIEW
+        return InitialStageDecision(
+            stage=WorkflowStage.EPIC_REVIEW,
+            reason="Detected explicit pre-implementation review/design-gate language.",
+            review_score=5,
+            implementation_score=0,
+        )
 
     has_review_word = "review" in summary or "approve" in summary
     if has_review_word and any(token in summary for token in REVIEW_START_TOKENS):
-        return WorkflowStage.EPIC_REVIEW
+        return InitialStageDecision(
+            stage=WorkflowStage.EPIC_REVIEW,
+            reason="Detected review wording tied to design/spec/architecture intent.",
+            review_score=4,
+            implementation_score=0,
+        )
 
-    return WorkflowStage.IMPLEMENTATION
+    review_score = sum(weight for marker, weight in REVIEW_SCORE_MARKERS if marker in summary)
+    implementation_score = sum(weight for marker, weight in IMPLEMENTATION_SCORE_MARKERS if marker in summary)
+    implementation_score += sum(2 for section in IMPLEMENTATION_BIAS_SECTIONS if section in summary)
+
+    if task_context:
+        context = task_context.lower()
+        if "must wait for" in context and "can run in parallel with" in context:
+            implementation_score += 1
+        if "the unit is expected to be not yet implemented" in context:
+            review_score += 2
+
+    if implementation_score >= review_score:
+        return InitialStageDecision(
+            stage=WorkflowStage.IMPLEMENTATION,
+            reason=(
+                "Intent analysis favors delivery/build work"
+                f" (implementation={implementation_score}, review={review_score})."
+            ),
+            review_score=review_score,
+            implementation_score=implementation_score,
+        )
+
+    return InitialStageDecision(
+        stage=WorkflowStage.EPIC_REVIEW,
+        reason=(
+            "Intent analysis favors planning/review work"
+            f" (review={review_score}, implementation={implementation_score})."
+        ),
+        review_score=review_score,
+        implementation_score=implementation_score,
+    )
 
 
 @dataclass
