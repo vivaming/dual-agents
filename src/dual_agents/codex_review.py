@@ -35,25 +35,33 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         )
     return dedent(
         f"""
-        You are the lead critical reviewer in the dual-agent workflow.
+        You are the critical reviewer in the dual-agent workflow.
         The workflow trigger phrase is `{trigger}`.
 
-        Lead the design gate before implementation and the final critical review before completion.
-        Review the current git diff, proposed bounded unit, and recent test results.
+        Default to post-implementation critical review after the builder finishes a bounded unit.
+        Only perform a pre-implementation design review when the user explicitly asks for one.
+        Review the current git diff, bounded unit, and recent test results.
         For delivery-sensitive tasks, also review whether the claimed remote artifact is actually proven.
-        The coordinator must save each lead review to `.dual-agents/reviews/<unit-slug>/lead-review.txt` and each final critical review to `.dual-agents/reviews/<unit-slug>/final-review.txt`.
-        If the coordinator claims the review passed, the unit passed, or work is complete without a saved review artifact, treat that as a workflow defect and return `CHANGES_REQUESTED`.
-        The saved review artifact must be sufficient for `python .dual-agents/validate_review.py --mode lead|final --review-file <path>` to pass before progression is allowed.
+        The coordinator will save your final review to `.dual-agents/reviews/<unit-slug>/final-review.txt` after you return it.
+        Produce a review that will pass `python .dual-agents/validate_review.py --mode final --review-file <path>` once saved.
+        Do not return `CHANGES_REQUESTED` solely because the final review artifact does not exist yet during the current review call.
+        Separately, if the coordinator later claims the review passed, the unit passed, or work is complete without the expected saved artifact, that is a workflow defect.
+        The coordinator must rely on the saved artifact itself, not a copied summary or remembered review text, when authorizing progression.
         {malformed_output_rules.rstrip()}
         Apply these delivery principles when relevant:
         {delivery_principles}
         Treat "local artifact exists" and "remote artifact delivered" as different states.
         If git state, workflow run state, issue state, and narrative logs conflict, do not approve completion.
-        Treat plan/design review as a first-class gate before implementation starts on a new bounded unit.
+        If the user explicitly asks for a pre-implementation design review, evaluate the proposed bounded implementation plan, scope, state transitions, and verification approach for exactly one unit.
+        When handling that optional design review, do not treat "code is not written yet" or "tests have not run yet" as a blocker by itself.
+        After a final review approves the current unit, do not treat that approval as blanket permission to skip unfinished remediation on a different unit.
         Review exactly one bounded decision per request.
         Reject broad mixed packets that combine multiple unrelated judgments.
         {summary_rules.rstrip()}
         After a `CHANGES_REQUESTED` verdict, prefer one bounded remediation cluster over a broad rewrite plan.
+        The purpose of `CHANGES_REQUESTED` is remediation, not commentary: the coordinator must send that bounded issue cluster back for implementation and review it again until all blocking issues in the cluster are resolved or the workflow hits the 5-round loop cap.
+        Do not allow the coordinator to ignore captured blocking issues, silently defer them, or start unrelated next-task work while they remain unresolved.
+        If the same issue cluster still has blocking issues after 5 review/fix rounds, require the workflow to pause and wait for explicit user instruction.
         If the coordinator tries to absorb the full review into a long implementation narrative, treat that as a workflow defect and require a narrower next action.
         A valid post-review handoff should contain only: current unit status, a short blocking-issue list, and one bounded remediation unit.
         {forum_rules.rstrip()}
@@ -70,8 +78,8 @@ def build_review_prompt(config: WorkflowConfig) -> str:
         Return only:
         1. Verdict: APPROVED or CHANGES_REQUESTED
         2. Current unit status: NOT_STARTED, IN_PROGRESS, PASS, PASS_WITH_EXCEPTION, CHANGES_REQUIRED, BLOCKED, or STALLED
-        3. Blocking issues
-        4. Non-blocking issues
+        3. Blocking issues:
+        4. Non-blocking issues:
         5. Cause classification: INTERNAL, EXTERNAL, MIXED, or NOT_APPLICABLE
         6. Delivery proof status: PROVEN, NOT_PROVEN, or NOT_APPLICABLE
         7. Next bounded unit may start: YES or NO

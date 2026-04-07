@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -40,24 +41,77 @@
         .container {
             max-width: 900px;
             width: 100%;
+            padding-top: 250px;
         }
 
-        /* MASSIVE HEADLINE - 20% smaller */
         .headline {
+            margin-bottom: 0.15em;
+            text-transform: uppercase;
+        }
+
+        .headline-word {
+            position: relative;
+            display: block;
+            width: fit-content;
             font-size: clamp(3.2rem, 12vw, 9.6rem);
             font-weight: 700;
             line-height: 0.9;
-            letter-spacing: -0.04em;
-            margin-bottom: 0.15em;
-            text-transform: uppercase;
-            color: var(--black);
+            letter-spacing: -0.05em;
+            padding-right: 0.08em;
+            color: transparent;
+            -webkit-text-stroke: 2px #111111;
+            background-image:
+                linear-gradient(180deg, #262626 0%, #111111 100%),
+                repeating-linear-gradient(
+                    90deg,
+                    transparent 0,
+                    transparent 22px,
+                    rgba(255, 255, 255, 0.08) 22px,
+                    rgba(255, 255, 255, 0.08) 23px
+                ),
+                repeating-linear-gradient(
+                    0deg,
+                    transparent 0,
+                    transparent 22px,
+                    rgba(255, 255, 255, 0.05) 22px,
+                    rgba(255, 255, 255, 0.05) 23px
+                );
+            -webkit-background-clip: text;
+            background-clip: text;
         }
 
-        .headline .accent {
-            color: var(--black);
-            background: linear-gradient(135deg, #f59e0b, #fbbf24);
+        .headline-word::after {
+            content: attr(data-text);
+            position: absolute;
+            inset: 0;
+            z-index: -1;
+            color: transparent;
+            -webkit-text-stroke: 2px #c86b4a;
+            transform: translate(0.06em, 0.08em);
+        }
+
+        .headline-word.accent::after {
+            -webkit-text-stroke: 2px #d97c55;
+        }
+
+        .headline-word.accent {
+            background-image:
+                linear-gradient(180deg, #fcd34d 0%, #f59e0b 100%),
+                repeating-linear-gradient(
+                    90deg,
+                    transparent 0,
+                    transparent 22px,
+                    rgba(120, 53, 15, 0.16) 22px,
+                    rgba(120, 53, 15, 0.16) 23px
+                ),
+                repeating-linear-gradient(
+                    0deg,
+                    transparent 0,
+                    transparent 22px,
+                    rgba(120, 53, 15, 0.1) 22px,
+                    rgba(120, 53, 15, 0.1) 23px
+                );
             -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
             background-clip: text;
         }
 
@@ -66,7 +120,7 @@
             font-size: clamp(1.2rem, 3vw, 2rem);
             font-weight: 300;
             letter-spacing: 0.02em;
-            margin-bottom: 3em;
+            margin-bottom: 1.4em;
             color: var(--gray);
         }
 
@@ -75,41 +129,10 @@
             font-weight: 500;
         }
 
-        /* THE PROMPTS - PRIMARY FOCUS */
-        .prompts {
-            margin-bottom: 4em;
-        }
-
-        .prompt-label {
-            font-size: 0.75rem;
-            font-weight: 500;
-            letter-spacing: 0.15em;
-            text-transform: uppercase;
-            color: var(--accent);
-            margin-bottom: 1.5em;
-        }
-
-        .prompt {
-            font-size: clamp(2rem, 5vw, 3.5rem);
-            font-weight: 600;
-            line-height: 1.2;
-            letter-spacing: -0.02em;
-            margin-bottom: 0.5em;
-        }
-
-        .prompt:last-child {
-            margin-bottom: 0;
-        }
-
-        .prompt .model {
-            color: var(--gray);
-            font-weight: 400;
-        }
-
         /* EXPLANATION */
         .explanation {
             margin-bottom: 3em;
-            padding: 2em 0;
+            padding: 1.1em 0;
             border-top: 1px solid var(--light-gray);
             border-bottom: 1px solid var(--light-gray);
         }
@@ -158,7 +181,7 @@
             height: 1px;
             background: var(--black);
             opacity: 0.2;
-            margin-bottom: 3em;
+            margin-bottom: 1em;
         }
 
         /* RESPONSIVE */
@@ -178,8 +201,8 @@
     <div class="container">
         <!-- HEADLINE -->
         <h1 class="headline">
-            DUAL<br>
-            <span class="accent">AGENTS</span>
+            <span class="headline-word" data-text="DUAL">DUAL</span>
+            <span class="headline-word accent" data-text="AGENTS">AGENTS</span>
         </h1>
 
         <!-- TAGLINE -->
@@ -189,21 +212,13 @@
 
         <div class="line"></div>
 
-        <!-- THE PROMPTS - PRIMARY FOCUS -->
-        <div class="prompts">
-            <div class="prompt-label">How it works</div>
-            <p class="prompt">Build <span class="model">→ GLM-5</span></p>
-            <p class="prompt">Review <span class="model">→ Codex</span></p>
-            <p class="prompt">Ship <span class="model">→ Verified</span></p>
-        </div>
-
         <!-- EXPLANATION -->
         <div class="explanation">
             <p>
-                <strong>GLM-5 builds your code.</strong> It writes, edits, and tests—doing the heavy lifting of implementation. This is where most of the token budget goes, because that's where the work happens.
+                <strong>The supporting agent drives implementation.</strong> It writes, edits, and tests—doing the heavy lifting of execution. This is where most of the token budget goes, because that's where the work happens.
             </p>
             <p>
-                <strong>Codex reviews at critical gates.</strong> Not constantly—only when decisions matter. It catches what the builder misses, validates quality, and ensures nothing ships with blocking issues.
+                <strong>The lead agent reviews at critical gates.</strong> Not constantly—only when decisions matter. It catches what the execution layer misses, validates quality, and ensures nothing ships with blocking issues.
             </p>
             <p>
                 <strong>The coordinator orchestrates everything.</strong> It plans the work, routes tasks to the right agent, tracks progress, and handles escalations when the builder and reviewer disagree.

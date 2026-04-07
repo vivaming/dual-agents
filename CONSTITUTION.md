@@ -2,14 +2,14 @@
 
 ## Purpose
 
-The dual-agent workflow exists to keep ordinary development conversation and implementation on `GLM-5` while reserving `Codex / GPT` usage for high-value review gates.
+The dual-agent workflow exists to keep ordinary development conversation and implementation on `GLM-4-Turbo` while reserving `Codex / GPT` usage for high-value review gates.
 
 ## Core Roles
 
 ### 1. Dual Coordinator
 
 - Primary conversation agent in OpenCode
-- Default model: `zai/glm-5`
+- Default model: `zai/glm-5.1`
 - Talks to the user directly
 - Decides whether work stays in normal GLM mode or enters dual-agent mode
 - Routes implementation to `glm-builder`
@@ -18,7 +18,7 @@ The dual-agent workflow exists to keep ordinary development conversation and imp
 ### 2. GLM Builder
 
 - Implementation agent inside OpenCode
-- Default model: `zai/glm-5`
+- Default model: `zai/glm-5.1`
 - Reads local repo instructions and skills
 - Performs file edits, local investigation, and test runs
 - Ends each implementation cycle with a short self-review
@@ -67,7 +67,7 @@ Instead, the coordinator should pass only the minimum repo context and the most 
 
 ### GLM First
 
-- Normal conversation should stay in OpenCode on `GLM-5`
+- Normal conversation should stay in OpenCode on `GLM-4-Turbo`
 - Do not spend Codex / GPT review capacity on ordinary chat
 - Codex is a scarce review resource, not the default assistant
 
@@ -150,6 +150,7 @@ General rules:
 - bound the work before acting
 - do not advance from ambiguous state
 - file-backed truth beats conversational memory
+- review gates must load from the expected saved artifact for the current bounded unit; copied review text is not enough
 - close before expand
 - exceptions must be explicit
 - use the smallest sufficient action when uncertain
@@ -170,6 +171,7 @@ Allowed unit states:
 Progression rules:
 
 - only `PASS` and `PASS_WITH_EXCEPTION` allow the next bounded unit to start
+- final approval for the current bounded unit closes only that unit; it does not authorize bypassing unfinished remediation on a different bounded unit
 - `PARTIAL`, `UNCLEAR`, or `MIXED` are not completion states and must be converted into one of the allowed states before advancing
 - `PASS_WITH_EXCEPTION` requires a written exception record with:
   - reason
@@ -180,6 +182,8 @@ Progression rules:
   - remediate now
   - run review or audit
   - pause for user guidance
+- if Codex returns `CHANGES_REQUESTED`, every captured blocking issue in that bounded remediation cluster stays in scope until a later Codex review clears it or the 5-round loop budget is exhausted; after 5 unresolved rounds, pause and wait for user instruction
+- unresolved blocking review findings must not be silently dropped, treated as optional, or bypassed by starting later numbered tasks
 - if the user says "finish the rest", interpret that as "finish all unfinished work in correct sequence", not "jump to later numbered units"
 - when a review note claims `BLOCKED` or an external exception, challenge the premise before accepting it
 - premise challenge checks:
@@ -220,6 +224,7 @@ Terminal output is not a reliable system of record.
 
 For significant runs, the workflow should write durable artifacts such as:
 
+- bounded-unit run state
 - run logs
 - saved review summaries
 - per-round fix notes
@@ -281,7 +286,7 @@ Long-run controls:
 
 The workflow has already been validated for:
 
-- global OpenCode configuration using `zai/glm-5`
+- global OpenCode configuration using `zai/glm-5.1`
 - `dual-coordinator` as the default OpenCode conversation agent
 - `glm-builder` as the implementation agent
 - Codex CLI as a separate review worker
