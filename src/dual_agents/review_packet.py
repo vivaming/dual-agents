@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, replace
 
 from dual_agents.config import WorkflowConfig
@@ -23,8 +24,62 @@ class NarrowingResult:
     dropped_question_count: int
 
 
+SECTION_FIELDS = {
+    "decision needed": "decision_needed",
+    "evidence files": "evidence_files",
+    "facts observed": "facts_observed",
+    "open questions": "open_questions",
+}
+TITLE_PATTERN = re.compile(r"^\s*#\s+Review Request:\s*(.+?)\s*$", re.IGNORECASE)
+SECTION_PATTERN = re.compile(r"^\s*##\s+(.+?)\s*$")
+LIST_ITEM_PATTERN = re.compile(r"^\s*(?:[-*]|\d+\.)\s+(.*\S)\s*$")
+WHITESPACE_PATTERN = re.compile(r"\s+")
+FAILURE_TERMS = ("fail", "failing", "failure", "error", "regression", "blocked", "timeout")
+TEST_TERMS = ("test", "pytest", "verification", "validated")
+DIFF_TERMS = ("diff", "patch", "git diff")
+ARTIFACT_TERMS = ("artifact", "final-review", "lead-review", "run-state", "builder_result")
+
+
 def estimate_packet_size(packet: ReviewPacket) -> int:
     return len(render_review_packet(packet))
+
+
+def parse_review_packet(raw_request: str) -> ReviewPacket | None:
+    lines = raw_request.splitlines()
+    decision_name: str | None = None
+    sections: dict[str, list[str]] = {field: [] for field in SECTION_FIELDS.values()}
+    current_field: str | None = None
+
+    for line in lines:
+        if decision_name is None:
+            title_match = TITLE_PATTERN.match(line)
+            if title_match:
+                decision_name = _clean_text(title_match.group(1))
+                continue
+        section_match = SECTION_PATTERN.match(line)
+        if section_match:
+            current_field = SECTION_FIELDS.get(section_match.group(1).strip().lower())
+            continue
+        if current_field is None:
+            continue
+        item = _extract_item(line)
+        if item is not None:
+            sections[current_field].append(item)
+
+    if not decision_name:
+        return None
+
+    decision_candidates = _dedupe_items(sections["decision_needed"], truncate_to=320)
+    if not decision_candidates:
+        return None
+
+    return ReviewPacket(
+        decision_name=decision_name,
+        decision_needed=" ".join(decision_candidates),
+        evidence_files=tuple(sections["evidence_files"]),
+        facts_observed=tuple(sections["facts_observed"]),
+        open_questions=tuple(sections["open_questions"]),
+    )
 
 
 def build_review_packet(
@@ -37,11 +92,11 @@ def build_review_packet(
     open_questions: list[str],
 ) -> ReviewPacket:
     packet = ReviewPacket(
-        decision_name=decision_name.strip(),
-        decision_needed=decision_needed.strip(),
-        evidence_files=tuple(path.strip() for path in evidence_files if path.strip()),
-        facts_observed=tuple(fact.strip() for fact in facts_observed if fact.strip()),
-        open_questions=tuple(question.strip() for question in open_questions if question.strip()),
+        decision_name=_clean_text(decision_name),
+        decision_needed=_clean_text(decision_needed),
+        evidence_files=tuple(_rank_evidence_files(_dedupe_items(evidence_files, truncate_to=None))),
+        facts_observed=tuple(_rank_facts(_dedupe_items(facts_observed, truncate_to=280))),
+        open_questions=tuple(_rank_questions(_dedupe_items(open_questions, truncate_to=220))),
     )
     return narrow_review_packet(config=config, packet=packet, attempt=1).packet
 
@@ -95,3 +150,96 @@ def render_review_packet(packet: ReviewPacket) -> str:
         f"## Open Questions\n"
         f"{questions_block}"
     )
+
+
+def _extract_item(line: str) -> str | None:
+    match = LIST_ITEM_PATTERN.match(line)
+    if match:
+        return _clean_text(match.group(1))
+    cleaned = _clean_text(line)
+    return cleaned or None
+
+
+def _clean_text(value: str) -> str:
+    return WHITESPACE_PATTERN.sub(" ", value).strip()
+
+
+def _dedupe_items(values: list[str], *, truncate_to: int | None) -> list[str]:
+    seen: set[str] = set()
+    cleaned_items: list[str] = []
+    for value in values:
+        cleaned = _clean_text(value)
+        if not cleaned:
+            continue
+        if truncate_to is not None and len(cleaned) > truncate_to:
+            cleaned = cleaned[: truncate_to - 3].rstrip() + "..."
+        dedupe_key = cleaned.casefold()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        cleaned_items.append(cleaned)
+    return cleaned_items
+
+
+def _rank_evidence_files(values: list[str]) -> list[str]:
+    return sorted(values, key=_evidence_sort_key)
+
+
+def _rank_facts(values: list[str]) -> list[str]:
+    return sorted(values, key=_fact_sort_key)
+
+
+def _rank_questions(values: list[str]) -> list[str]:
+    return sorted(values, key=_question_sort_key)
+
+
+def _evidence_sort_key(value: str) -> tuple[int, int, str]:
+    lowered = value.casefold()
+    score = 0
+    if "final-review.txt" in lowered or "lead-review.txt" in lowered:
+        score -= 80
+    if "run-state.json" in lowered:
+        score -= 70
+    if any(term in lowered for term in DIFF_TERMS):
+        score -= 60
+    if any(term in lowered for term in TEST_TERMS):
+        score -= 50
+    if "builder" in lowered:
+        score -= 45
+    if any(term in lowered for term in ARTIFACT_TERMS):
+        score -= 35
+    if lowered.endswith(".md"):
+        score += 5
+    return (score, len(value), lowered)
+
+
+def _fact_sort_key(value: str) -> tuple[int, int, str]:
+    lowered = value.casefold()
+    score = 0
+    if any(term in lowered for term in FAILURE_TERMS):
+        score -= 80
+    if any(term in lowered for term in TEST_TERMS):
+        score -= 65
+    if any(term in lowered for term in DIFF_TERMS):
+        score -= 95
+    if any(term in lowered for term in ARTIFACT_TERMS):
+        score -= 45
+    if "current unit" in lowered or "bounded unit" in lowered:
+        score -= 40
+    if "proved" in lowered or "proven" in lowered or "not proven" in lowered:
+        score -= 35
+    return (score, len(value), lowered)
+
+
+def _question_sort_key(value: str) -> tuple[int, int, str]:
+    lowered = value.casefold()
+    score = 0
+    if "next bounded unit" in lowered or "can the next unit" in lowered:
+        score -= 50
+    if "blocking" in lowered or "blocker" in lowered:
+        score -= 45
+    if "evidence" in lowered:
+        score -= 35
+    if "delivery" in lowered or "proof" in lowered:
+        score -= 30
+    return (score, len(value), lowered)

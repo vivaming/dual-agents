@@ -25,6 +25,7 @@ from dual_agents.controller import (
     validate_review_result,
 )
 from dual_agents.opencode_assets import build_agent_markdown, build_command_markdown, build_opencode_config
+from dual_agents.review_packet import build_review_packet, parse_review_packet, render_review_packet
 from dual_agents.stop_monitor import classify_stop, format_stop_report
 from dual_agents.state import (
     RunState,
@@ -453,7 +454,7 @@ def _run_codex_review(*, config: WorkflowConfig, review_request: str, cwd: Path)
 
 
 def _normalize_review_request(review_request: str, *, mode: ReviewGateMode) -> str:
-    normalized = review_request.strip()
+    normalized = _prepare_review_request(review_request)
     if mode == ReviewGateMode.LEAD:
         preamble = (
             "REVIEW MODE: LEAD\n"
@@ -471,6 +472,22 @@ def _normalize_review_request(review_request: str, *, mode: ReviewGateMode) -> s
         )
         return preamble + "\n" + normalized
     return normalized
+
+
+def _prepare_review_request(review_request: str) -> str:
+    normalized = review_request.strip()
+    parsed_packet = parse_review_packet(normalized)
+    if parsed_packet is None:
+        return normalized
+    compact_packet = build_review_packet(
+        config=default_workflow_config(),
+        decision_name=parsed_packet.decision_name,
+        decision_needed=parsed_packet.decision_needed,
+        evidence_files=list(parsed_packet.evidence_files),
+        facts_observed=list(parsed_packet.facts_observed),
+        open_questions=list(parsed_packet.open_questions),
+    )
+    return render_review_packet(compact_packet)
 
 
 def _load_controller_from_state(

@@ -151,6 +151,89 @@ def test_review_gate_prepends_lead_mode_guidance(tmp_path: Path, monkeypatch) ->
     assert result.exit_code == 0
 
 
+def test_review_gate_compacts_structured_request_before_codex(tmp_path: Path, monkeypatch) -> None:
+    request_file = tmp_path / "review-request.txt"
+    request_file.write_text(
+        "# Review Request: Packet hygiene\n\n"
+        "## Decision Needed\n"
+        "- Decide whether the bounded unit can advance.\n\n"
+        "## Evidence Files\n"
+        "- /tmp/a.md\n"
+        "- /tmp/a.md\n"
+        "- /tmp/b.md\n\n"
+        "## Facts Observed\n"
+        "- duplicate fact\n"
+        "- duplicate fact\n\n"
+        "## Open Questions\n"
+        "1. Can the next bounded unit start?\n"
+        "2. Can the next bounded unit start?\n\n"
+        "## Required Output Format\n"
+        "- This section should not be forwarded.\n"
+    )
+
+    def fake_run(command, cwd, capture_output, text, check):
+        prompt = command[-1]
+        assert "# Review Request: Packet hygiene" in prompt
+        assert prompt.count("- /tmp/a.md") == 1
+        assert prompt.count("duplicate fact") == 1
+        assert prompt.count("Can the next bounded unit start?") == 1
+        assert "Required Output Format" not in prompt
+        return CompletedProcess(
+            command,
+            0,
+            stdout=(
+                "1. Verdict: APPROVED\n"
+                "2. Current unit status: PASS\n"
+                "3. Blocking issues: None\n"
+                "4. Non-blocking issues: None\n"
+                "5. Cause classification: NOT_APPLICABLE\n"
+                "6. Delivery proof status: NOT_APPLICABLE\n"
+                "7. Next bounded unit may start: YES\n"
+                "8. Suggested next action: Start the next bounded unit.\n"
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr("dual_agents.cli.subprocess.run", fake_run)
+    state_path = tmp_path / ".dual-agents" / "run-state.json"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(
+        json.dumps(
+            {
+                "current_unit": {
+                    "unit_slug": "task-02-metadata",
+                    "stage": "critical_review",
+                    "review_fix_rounds_used": 0,
+                    "lead_review_required": False,
+                    "critical_review_required": False,
+                    "current_builder_task": None,
+                    "current_builder_task_type": None,
+                    "expected_lead_review_path": str(tmp_path / ".dual-agents" / "reviews" / "task-02-metadata" / "lead-review.txt"),
+                    "expected_final_review_path": str(tmp_path / ".dual-agents" / "reviews" / "task-02-metadata" / "final-review.txt"),
+                }
+            }
+        )
+        + "\n"
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "review-gate",
+            "--unit-slug",
+            "task-02-metadata",
+            "--mode",
+            "final",
+            "--request-file",
+            str(request_file),
+            "--repo-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+
+
 def test_review_gate_validates_final_review_delivery_proof(tmp_path: Path, monkeypatch) -> None:
     request_file = tmp_path / "review-request.txt"
     request_file.write_text("# Review Request\n\nPlease review this bounded unit.\n")
