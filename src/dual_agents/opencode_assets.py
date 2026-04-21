@@ -44,8 +44,8 @@ def build_command_markdown(config: WorkflowConfig) -> str:
         Use `{config.builder.name}` for implementation.
         Start each bounded unit by running `dual-agents start-unit` so the workflow records state and auto-detects implementation vs pre-implementation review from the user statement plus the task file.
         If `dual-agents start-unit` chooses `implementation`, continue with delivery/build work.
-        If it chooses `epic_review`, use Codex for a lead/design review before implementation.
-        After implementation, call the local Codex CLI review worker for a final critical review.
+        If it chooses `epic_review`, use the local Codex/GPT review worker for a lead/design review before implementation.
+        After implementation, call the local Codex/GPT review worker for a final critical review.
         Treat every `CHANGES_REQUESTED` verdict as an instruction to remediate the captured issue cluster and rerun review, not as optional advice.
         Continue review/fix cycles on that same bounded unit until blocking issues are cleared or the 5-round loop budget for that issue cluster is exhausted, then pause and wait for user instruction.
         Accept final review gates only from the saved artifact path for the current bounded unit, never from copied review text or memory.
@@ -69,7 +69,7 @@ def build_opencode_config(config: WorkflowConfig) -> str:
         "provider": {
             config.opencode_provider_id: {
                 "npm": "@ai-sdk/openai-compatible",
-                "name": "Z.AI",
+                "name": "MiniMax",
                 "options": {
                     "baseURL": config.builder.provider.base_url,
                     "apiKey": f"{{env:{config.builder.provider.api_key_env}}}",
@@ -128,7 +128,7 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             ---
 
             You are the coordinator. Use `{config.builder.name}` for implementation.
-            The reviewer runs through local Codex CLI, not as an OpenCode agent.
+            Planning/design review and final review both run through local Codex/GPT, not as OpenCode agents.
             Bound the current unit before acting and identify the artifact that proves its status.
             Before doing substantive work on a new bounded unit, run `dual-agents start-unit --unit-slug <unit-slug> --repo-root <repo>`.
             If the task file is known, include `--task-file <path>`; otherwise include a concise `--task-summary "<user request>"`.
@@ -136,7 +136,7 @@ def build_agent_markdown(config: WorkflowConfig) -> dict[str, str]:
             Use `decision_reason`, `review_score`, and `implementation_score` as workflow evidence when the user asks why the session started in implementation or review.
             In controller terms, start each task with `begin_new_bounded_unit(<unit-slug>)`, hand one bounded implementation task to `{config.builder.name}`, and use `submit_saved_review()` only for saved review artifacts.
             Do not override an `implementation` start just because an epic exists. If the task file is delivery-shaped, stay focused on delivery/build work.
-            Activate a lead/design review only when the classifier or the user explicitly points to planning/review intent.
+            Activate a lead/design review only when the classifier or the user explicitly points to planning/review intent, and route that planning judgment to Codex/GPT.
             Do not let the conversation drift into reviewing the whole epic when the current task should be implemented.
             After any final review that approves the current unit, stop at that task boundary and only then begin the next bounded unit.
             Never roll directly from `Task N` unfinished review/fix loop into `Task N+1` implementation.

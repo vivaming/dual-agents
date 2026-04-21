@@ -2,14 +2,14 @@
 
 Dual Agents is a portable Python scaffold for a dual-agent workflow built around two tools:
 
-- `OpenCode` runs the implementation agent with `GLM-5`
-- `Codex CLI` runs the critical review step with your ChatGPT-authenticated Codex session
+- `OpenCode` runs the implementation agent with `MiniMax-M2.7`
+- `Codex CLI` runs planning/design review and critical review with your ChatGPT-authenticated Codex session
 
 The coordinator logic stays local so the workflow can be reused across projects without copying per-repo model wiring.
 
 ## Current Design
 
-- `glm-builder` is generated as an OpenCode agent using the Z.AI coding endpoint
+- `minimax-builder` is generated as an OpenCode agent using the MiniMax OpenAI-compatible endpoint
 - `dual-coordinator` is generated as an OpenCode agent and `/dual` command contract
 - `codex-reviewer` is represented as a local Codex review prompt and command template
 - workflow state transitions are encoded in Python
@@ -23,10 +23,10 @@ The coordinator logic stays local so the workflow can be reused across projects 
 
 1. Make sure `opencode` is installed and available on your shell `PATH`
 2. Make sure `codex` is installed and logged in with `codex --login`
-3. Set your GLM key in the environment
+3. Set your MiniMax key in the environment
 
 ```bash
-export GLM_API_KEY=your_key_here
+export MINIMAX_API_KEY=your_key_here
 ```
 
 ## Quickstart
@@ -37,7 +37,7 @@ cd dual-agents
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-export GLM_API_KEY=your_key_here
+export MINIMAX_API_KEY=your_key_here
 dual-agents doctor
 dual-agents init-target --output-dir /path/to/target-repo
 ```
@@ -111,6 +111,6 @@ This project uses the Apache License 2.0. See `LICENSE` and `NOTICE`.
 
 The current scaffold requires:
 
-- `GLM_API_KEY`
+- `MINIMAX_API_KEY`
 
 No `OPENAI_API_KEY` is required for the review path when Codex CLI is used as the reviewer runtime.

@@ -2,30 +2,30 @@
 
 ## Purpose
 
-The dual-agent workflow exists to keep ordinary development conversation and implementation on `GLM-4-Turbo` while reserving `Codex / GPT` usage for high-value review gates.
+The dual-agent workflow exists to keep ordinary development conversation and implementation on `MiniMax-M2.7` while reserving `Codex / GPT` usage for planning and high-value review gates.
 
 ## Core Roles
 
 ### 1. Dual Coordinator
 
 - Primary conversation agent in OpenCode
-- Default model: `zai/glm-5.1`
+- Default model: `MiniMax-M2.7`
 - Talks to the user directly
-- Decides whether work stays in normal GLM mode or enters dual-agent mode
-- Routes implementation to `glm-builder`
+- Decides whether work stays in normal MiniMax mode or enters dual-agent mode
+- Routes implementation to `minimax-builder`
 - Routes critical review to local `codex` only when needed
 
-### 2. GLM Builder
+### 2. MiniMax Builder
 
 - Implementation agent inside OpenCode
-- Default model: `zai/glm-5.1`
+- Default model: `MiniMax-M2.7`
 - Reads local repo instructions and skills
 - Performs file edits, local investigation, and test runs
 - Ends each implementation cycle with a short self-review
 
 ### 3. Independent Auditor
 
-- Separate GLM-based audit agent
+- Separate Codex / GPT audit agent
 - Invoked after repeated failed review/fix loops
 - Judges whether the current direction is still correct
 - Decides whether to continue, reset direction, or pause for user guidance
@@ -33,7 +33,7 @@ The dual-agent workflow exists to keep ordinary development conversation and imp
 ### 4. Codex Reviewer
 
 - External review worker invoked through local `codex` CLI
-- Used at the design gate before implementation and at critical review gates, or when the user explicitly requests GPT / Codex review
+- Used at the design gate before implementation, for planning judgments, and at critical review gates, or when the user explicitly requests GPT / Codex review
 - Default behavior is review-only
 - Reviewer edits are not the default path and should be user-directed
 - Reviewer runtime should be pinned to `gpt-5.4` unless the user explicitly overrides it
@@ -65,9 +65,9 @@ Instead, the coordinator should pass only the minimum repo context and the most 
 
 ## Operating Principles
 
-### GLM First
+### MiniMax First
 
-- Normal conversation should stay in OpenCode on `GLM-4-Turbo`
+- Normal conversation should stay in OpenCode on `MiniMax-M2.7`
 - Do not spend Codex / GPT review capacity on ordinary chat
 - Codex is a scarce review resource, not the default assistant
 
@@ -109,7 +109,7 @@ User talks to `dual-coordinator` in OpenCode.
 
 The coordinator:
 - answers directly when the task is simple
-- uses `glm-builder` when implementation work is needed
+- uses `minimax-builder` when implementation work is needed
 - avoids Codex unless review is necessary
 
 ### Dual-Agent Mode
@@ -122,14 +122,14 @@ Triggered explicitly by commands like:
 The coordinator should:
 1. understand the task from local repo context
 2. invoke Codex for lead design review on the bounded unit
-3. delegate implementation to `glm-builder`
+3. delegate implementation to `minimax-builder`
 4. request self-review from the builder
 5. invoke Codex at final critical review gates
 6. classify findings into blocking vs non-blocking
 7. send blocking issues back to the builder
 8. bootstrap a persistent run log for each significant complex run
 9. run no more than 5 review/fix loops per issue cluster before escalation
-10. invoke `independent-auditor` after loop exhaustion
+10. invoke `independent-auditor` through Codex / GPT after loop exhaustion
 11. reset the loop budget once if the auditor validates direction
 12. pause and report findings to the user if the second loop block still fails
 
@@ -286,9 +286,9 @@ Long-run controls:
 
 The workflow has already been validated for:
 
-- global OpenCode configuration using `zai/glm-5.1`
+- global OpenCode configuration using `MiniMax-M2.7`
 - `dual-coordinator` as the default OpenCode conversation agent
-- `glm-builder` as the implementation agent
+- `minimax-builder` as the implementation agent
 - Codex CLI as a separate review worker
 - live repo-context reading in the `ebike` project
 - Task 12 review-gate escalation for Pair 1 remediation

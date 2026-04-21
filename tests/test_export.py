@@ -10,7 +10,7 @@ def test_export_writes_expected_files(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert (tmp_path / ".opencode" / ".gitignore").exists()
     assert (tmp_path / ".opencode" / "opencode.json").exists()
-    assert (tmp_path / ".opencode" / "agents" / "glm-builder.md").exists()
+    assert (tmp_path / ".opencode" / "agents" / "minimax-builder.md").exists()
     assert (tmp_path / ".opencode" / "commands" / "dual.md").exists()
     assert (tmp_path / ".dual-agents" / "codex-review.txt").exists()
     assert (tmp_path / ".dual-agents" / "validate_report.py").exists()

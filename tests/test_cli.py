@@ -15,15 +15,15 @@ def test_cli_shows_help() -> None:
 
 
 def test_doctor_fails_when_required_tools_or_env_are_missing(monkeypatch) -> None:
-    monkeypatch.delenv("GLM_API_KEY", raising=False)
+    monkeypatch.delenv("MINIMAX_API_KEY", raising=False)
     monkeypatch.setattr("dual_agents.cli.shutil.which", lambda name: None)
     result = CliRunner().invoke(app, ["doctor"])
     assert result.exit_code == 1
-    assert "GLM_API_KEY" in result.stdout
+    assert "MINIMAX_API_KEY" in result.stdout
 
 
 def test_init_target_exports_assets_and_prints_next_steps(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("GLM_API_KEY", "test-key")
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
     monkeypatch.setattr("dual_agents.cli.shutil.which", lambda name: f"/usr/bin/{name}")
     result = CliRunner().invoke(app, ["init-target", "--output-dir", str(tmp_path)])
     assert result.exit_code == 0

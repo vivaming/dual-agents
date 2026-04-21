@@ -20,41 +20,43 @@ This file tracks the current capabilities, constraints, and proven behaviors of 
 
 ## Active Architecture
 
-- **dual-coordinator**: Primary OpenCode conversation agent using `zai/glm-5.1`
-- **glm-builder**: OpenCode implementation agent using `zai/glm-5.1`
-- **independent-auditor**: GLM-based checkpoint agent for stuck loops
-- **codex reviewer**: Local `codex` CLI used for critical review gates
+- **dual-coordinator**: Primary OpenCode conversation agent using `MiniMax-M2.7`
+- **minimax-builder**: OpenCode implementation agent using `MiniMax-M2.7`
+- **independent-auditor**: Codex / GPT planning and audit agent for stuck loops and direction checks
+- **codex reviewer**: Local `codex` CLI used for lead/design review and final critical review gates
 
 ## Global OpenCode Setup
 
-- **default model**: `zai/glm-5.1`
+- **default model**: `MiniMax-M2.7`
 - **default agent**: `dual-coordinator`
-- **provider**: Z.AI via OpenAI-compatible endpoint
-- **base URL**: `https://api.z.ai/api/coding/paas/v4/`
-- **env key**: `GLM_API_KEY`
+- **provider**: MiniMax via OpenAI-compatible endpoint
+- **base URL**: `https://api.minimax.io/v1`
+- **env key**: `MINIMAX_API_KEY`
 
 ## Supported Workflow Patterns
 
 - **normal conversation**: stay on `dual-coordinator`
-- **implementation delegation**: coordinator routes work to `glm-builder`
-- **loop checkpointing**: coordinator invokes `independent-auditor` after repeated failed loops
+- **implementation delegation**: coordinator routes work to `minimax-builder`
+- **loop checkpointing**: coordinator invokes Codex / GPT planning-audit review after repeated failed loops
 - **explicit dual workflow trigger**: `/dual ...`
 - **phrase trigger**: `sort it out with dual agent workflow`
-- **critical review escalation**: use local Codex CLI only at review gates
+- **critical review escalation**: use local Codex / GPT at planning and review gates
 - **complex team mode**: coordinator can split complex work into bounded parallel tracks and reassemble them
 
 ## Agent Skill Strategy
 
 - **dual-coordinator**: planning, orchestration, worktree, and governance skills
-- **glm-builder**: task-specific domain skills chosen by work type
-- **independent-auditor**: minimal context plus the most relevant goal, findings, and evidence
-- **codex reviewer**: review only; pass minimal repo context rather than full skill sprawl
+- **minimax-builder**: task-specific domain skills chosen by work type
+- **independent-auditor**: minimal context plus the most relevant goal, findings, and evidence, routed to Codex / GPT
+- **codex reviewer**: planning and review only; pass minimal repo context rather than full skill sprawl
 
 ## Review Policy
 
 - **ordinary chat**: do not invoke Codex
 - **critical review**: invoke Codex when:
+- user explicitly asks for GPT / Codex planning review
   - user explicitly asks for GPT / Codex review
+  - workflow reaches a formal planning gate
   - workflow reaches a formal review gate
   - independent judgment is needed on blocking issues
 - **mandatory progression review**: invoke Codex before accepting blocker claims, exception-based closure, or progression past previously partial work - Flow control - Coordinator
@@ -65,7 +67,7 @@ This file tracks the current capabilities, constraints, and proven behaviors of 
 ## Feedback Loop Policy
 
 - **default loop budget**: 5 review/fix rounds per issue cluster
-- **first exhaustion**: invoke `independent-auditor`
+- **first exhaustion**: invoke `independent-auditor` through Codex / GPT
 - **auditor continue verdict**: reset loop budget once
 - **second exhaustion**: pause and report findings to the user
 - **goal**: avoid overkill, token burn, and direction drift
@@ -81,13 +83,13 @@ This file tracks the current capabilities, constraints, and proven behaviors of 
 
 - **global config**: `$HOME/.config/opencode/opencode.json`
 - **global coordinator agent**: `$HOME/.config/opencode/agents/dual-coordinator.md`
-- **global builder agent**: `$HOME/.config/opencode/agents/glm-builder.md`
+- **global builder agent**: `$HOME/.config/opencode/agents/minimax-builder.md`
 - **global dual command**: `$HOME/.config/opencode/commands/dual.md`
 - **Codex decision review template**: `docs/templates/codex-decision-review-template.md`
 
 ## Proven Integrations
 
-- **OpenCode + Z.AI**: validated with `glm-builder`
+- **OpenCode + MiniMax**: validated with `minimax-builder`
 - **Codex CLI review path**: validated independently
 - **target-repo workflow context**: validated in a real downstream project
 
@@ -96,7 +98,7 @@ This file tracks the current capabilities, constraints, and proven behaviors of 
 - **terminal compaction risk**: session context may disappear from visible terminal history
 - **durable logging not automatic yet**: must be requested or implemented
 - **Codex is scarce**: should remain review-only unless explicitly overridden
-- **GLM key currently stored in shell profile**: convenient but not ideal for long-term secret hygiene
+- **MiniMax key currently stored in shell profile**: convenient but not ideal for long-term secret hygiene
 
 ## Run Log Convention
 

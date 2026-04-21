@@ -11,7 +11,7 @@ def test_build_command_mentions_dual_trigger() -> None:
     assert "auto-detects implementation vs pre-implementation review" in markdown.lower()
     assert "if `dual-agents start-unit` chooses `implementation`" in markdown.lower()
     assert "if it chooses `epic_review`" in markdown.lower()
-    assert "after implementation, call the local codex cli review worker" in markdown.lower()
+    assert "after implementation, call the local codex/gpt review worker" in markdown.lower()
     assert "after a bounded unit passes final review" not in markdown.lower()
     assert "continue review/fix cycles on that same bounded unit" in markdown.lower()
     assert "accept final review gates only from the saved artifact path" in markdown.lower()
@@ -31,10 +31,10 @@ def test_build_command_mentions_dual_trigger() -> None:
 def test_build_agent_markdown_contains_expected_agents() -> None:
     config = default_workflow_config()
     agents = build_agent_markdown(config)
-    assert "glm-builder.md" in agents
+    assert "minimax-builder.md" in agents
     assert "dual-coordinator.md" in agents
     assert "do not report remote success unless the remote artifact exists" in agents["dual-coordinator.md"].lower()
-    assert "publish, deploy, notify, or verification" in agents["glm-builder.md"].lower()
+    assert "publish, deploy, notify, or verification" in agents["minimax-builder.md"].lower()
     assert "never expose internal reasoning" in agents["dual-coordinator.md"].lower()
     assert "one row per requested brand" in agents["dual-coordinator.md"].lower()
     assert "validate_report.py" in agents["dual-coordinator.md"]
@@ -67,13 +67,13 @@ def test_build_agent_markdown_contains_expected_agents() -> None:
     assert "never author a review file yourself and then feed it to `dual-agents submit-review-artifact`" in agents["dual-coordinator.md"].lower()
     assert "pre-completion-audit" in agents["dual-coordinator.md"]
     assert "hard gate" in agents["dual-coordinator.md"].lower()
-    assert "return `stalled`" in agents["glm-builder.md"].lower()
+    assert "return `stalled`" in agents["minimax-builder.md"].lower()
 
 
 def test_build_opencode_config_targets_zai_provider() -> None:
     config = default_workflow_config()
     rendered = build_opencode_config(config)
     payload = json.loads(rendered)
-    assert payload["model"] == "zai/glm-5.1"
-    assert payload["provider"]["zai"]["options"]["baseURL"] == "https://api.z.ai/api/coding/paas/v4/"
-    assert payload["provider"]["zai"]["options"]["apiKey"] == "{env:GLM_API_KEY}"
+    assert payload["model"] == "MiniMax-M2.7"
+    assert payload["provider"]["minimax"]["options"]["baseURL"] == "https://api.minimax.io/v1"
+    assert payload["provider"]["minimax"]["options"]["apiKey"] == "{env:MINIMAX_API_KEY}"

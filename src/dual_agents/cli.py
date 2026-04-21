@@ -356,16 +356,16 @@ def build_stop_monitor_script() -> str:
 
 
 def default_workflow_config() -> WorkflowConfig:
-    glm_provider = ProviderConfig(
-        name="glm",
-        model="glm-5.1",
-        base_url="https://api.z.ai/api/coding/paas/v4/",
-        api_key_env="GLM_API_KEY",
+    minimax_provider = ProviderConfig(
+        name="minimax",
+        model="MiniMax-M2.7",
+        base_url="https://api.minimax.io/v1",
+        api_key_env="MINIMAX_API_KEY",
     )
     return WorkflowConfig(
         builder=AgentConfig(
-            name="glm-builder",
-            provider=glm_provider,
+            name="minimax-builder",
+            provider=minimax_provider,
             role="builder",
             can_edit=True,
             prompt="Implement requested changes and self-review before handoff.",
@@ -647,7 +647,9 @@ def export_assets(output_dir: Path = typer.Option(..., dir_okay=True, file_okay=
 def doctor() -> None:
     checks: list[tuple[str, bool, str]] = []
     checks.append(("python>=3.12", sys.version_info >= (3, 12), sys.version.split()[0]))
-    checks.append(("GLM_API_KEY", bool(os.getenv("GLM_API_KEY")), "set" if os.getenv("GLM_API_KEY") else "missing"))
+    checks.append(
+        ("MINIMAX_API_KEY", bool(os.getenv("MINIMAX_API_KEY")), "set" if os.getenv("MINIMAX_API_KEY") else "missing")
+    )
     checks.append(("opencode", shutil.which("opencode") is not None, shutil.which("opencode") or "not found"))
     checks.append(("codex", shutil.which("codex") is not None, shutil.which("codex") or "not found"))
 
@@ -670,8 +672,8 @@ def init_target(
         missing = []
         if sys.version_info < (3, 12):
             missing.append("python>=3.12")
-        if not os.getenv("GLM_API_KEY"):
-            missing.append("GLM_API_KEY")
+        if not os.getenv("MINIMAX_API_KEY"):
+            missing.append("MINIMAX_API_KEY")
         if shutil.which("opencode") is None:
             missing.append("opencode")
         if shutil.which("codex") is None:

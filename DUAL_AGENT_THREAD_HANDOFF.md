@@ -18,8 +18,8 @@ Use this file to start a new thread dedicated to the dual-agent workflow.
 
 - Treat `dual-agent-state.md` as the workflow control state.
 - Do not rely on prior chat memory when the files above exist.
-- Keep normal conversation on GLM.
-- Use Codex only for bounded review decisions.
+- Keep normal conversation and implementation on MiniMax.
+- Use Codex / GPT for bounded planning and review decisions.
 - If Codex review times out, split the decision and retry the smallest unresolved judgment.
 - Do not start later pairs while earlier units are unresolved unless a saved review explicitly allows progression.
 
@@ -48,7 +48,7 @@ Rules:
 - Do not rely on prior thread memory.
 - Use file-backed state.
 - Keep answers concise.
-- Use Codex only for bounded progression decisions.
+- Use Codex / GPT for bounded planning and progression decisions.
 
 First task:
 - Summarize the current next allowed action in 5 bullets max.
